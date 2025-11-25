@@ -1,19 +1,12 @@
 {
-    "version": 2,
-    "builds": [
+    "rewrites": [
         {
-            "src": "api/index.py",
-            "use": "@vercel/python"
-        }
-    ],
-    "routes": [
-        {
-            "src": "/",
-            "dest": "/public/index.html"
+            "source": "/",
+            "destination": "/public/index.html"
         },
         {
-            "src": "/api/(.*)",
-            "dest": "api/index.py"
+            "source": "/api/(.*)",
+            "destination": "/api/index.py"
         }
     ]
 }
