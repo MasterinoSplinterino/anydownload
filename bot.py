@@ -210,11 +210,45 @@ def get_format_str(quality):
 
 async def process_download(message: types.Message, url: str, quality: str):
     try:
+        # Progress update logic
+        last_edit_time = 0
+        
+        def progress_handler(d):
+            nonlocal last_edit_time
+            import time
+            current_time = time.time()
+            
+            # Update every 3 seconds to avoid flood limits
+            if current_time - last_edit_time < 3:
+                return
+
+            percent = d.get('_percent_str', 'N/A')
+            eta = d.get('_eta_str', 'N/A')
+            speed = d.get('_speed_str', 'N/A')
+            
+            # Clean up ANSI codes if present
+            percent = re.sub(r'\x1b\[[0-9;]*m', '', str(percent))
+            eta = re.sub(r'\x1b\[[0-9;]*m', '', str(eta))
+            speed = re.sub(r'\x1b\[[0-9;]*m', '', str(speed))
+            
+            text = f"📥 **Скачиваю:** {percent}\n🚀 **Скорость:** {speed}\n⏳ **Осталось:** {eta}"
+            
+            try:
+                # Schedule async update in the main loop
+                asyncio.run_coroutine_threadsafe(
+                    message.edit_text(text),
+                    asyncio.get_running_loop()
+                )
+                last_edit_time = current_time
+            except Exception:
+                pass
+
         if quality == "spotify":
             file_path = await download_spotify(url)
         else:
             format_str = get_format_str(quality)
-            file_path = await download_video(url, format_str)
+            # Pass progress_handler only for video downloads
+            file_path = await download_video(url, format_str, progress_callback=progress_handler)
         
         if not file_path or not os.path.exists(file_path):
             await message.answer("Не удалось скачать файл. Возможно, он недоступен.")
@@ -248,7 +282,7 @@ async def process_download(message: types.Message, url: str, quality: str):
                     error_msg = stderr.decode().strip()
                     logging.error(f"Uploader error: {error_msg}")
                     await message.answer(f"Ошибка при загрузке: {error_msg}")
-
+            
             except Exception as e:
                 logging.error(f"Subprocess error: {e}")
                 await message.answer(f"Не удалось запустить загрузчик: {e}")

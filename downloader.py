@@ -2,6 +2,9 @@ import yt_dlp
 import os
 import asyncio
 from concurrent.futures import ThreadPoolExecutor
+import sys
+import subprocess
+import glob
 
 # Create a downloads directory if it doesn't exist
 if os.environ.get("VERCEL"):
@@ -30,7 +33,7 @@ async def get_video_info(url):
     loop = asyncio.get_event_loop()
     return await loop.run_in_executor(executor, get_video_info_sync, url)
 
-def download_video_sync(url, format_str=None, output_filename=None):
+def download_video_sync(url, format_str=None, output_filename=None, progress_callback=None):
     ydl_opts = {
         'outtmpl': os.path.join(DOWNLOAD_DIR, '%(title)s.%(ext)s'),
         'quiet': True,
@@ -46,6 +49,15 @@ def download_video_sync(url, format_str=None, output_filename=None):
     # If output_filename is provided, use it (useful for temp names)
     if output_filename:
         ydl_opts['outtmpl'] = os.path.join(DOWNLOAD_DIR, output_filename)
+
+    # Add progress hook
+    def my_hook(d):
+        if d['status'] == 'downloading':
+            if progress_callback:
+                progress_callback(d)
+
+    if progress_callback:
+        ydl_opts['progress_hooks'] = [my_hook]
 
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
         try:
@@ -71,14 +83,6 @@ def download_video_sync(url, format_str=None, output_filename=None):
         except Exception as e:
             print(f"Error downloading: {e}")
             return None
-
-import sys
-import subprocess
-import glob
-
-# ... existing imports ...
-
-# ... existing code ...
 
 def download_spotify_sync(url):
     try:
@@ -125,6 +129,6 @@ async def download_spotify(url):
     loop = asyncio.get_event_loop()
     return await loop.run_in_executor(executor, download_spotify_sync, url)
 
-async def download_video(url, format_str=None):
+async def download_video(url, format_str=None, progress_callback=None):
     loop = asyncio.get_event_loop()
-    return await loop.run_in_executor(executor, download_video_sync, url, format_str)
+    return await loop.run_in_executor(executor, download_video_sync, url, format_str, None, progress_callback)
