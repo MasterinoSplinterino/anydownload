@@ -1,0 +1,14 @@
+version: '3.8'
+
+services:
+  bot:
+    build: .
+    restart: always
+    # Load environment variables from .env file
+    env_file:
+      - .env
+    # Persist data
+    volumes:
+      - ./downloads:/app/downloads
+      - ./allowed_users.txt:/app/allowed_users.txt
+      - ./uploader_session.session:/app/uploader_session.session

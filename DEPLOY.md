@@ -1,40 +1,54 @@
-# Deployment to Vercel
+# Deployment Guide
 
-## Prerequisites
-1.  **Vercel Account**: Sign up at [vercel.com](https://vercel.com).
-2.  **Vercel CLI** (Optional but recommended): `npm i -g vercel`
+## Option 1: Coolify (Recommended)
 
-## Steps
+Since you have a VPS with Coolify, this is the best option.
 
-1.  **Push to GitHub**:
-    *   Create a new repository on GitHub.
-    *   Push this code to it:
-        ```bash
-        git remote add origin <your-github-repo-url>
-        git branch -M main
-        git push -u origin main
-        ```
+1.  **Create a new Service**:
+    *   Select **Source**: Git Repository.
+    *   Select this repository (`MasterinoSplinterino/anydownload`).
+2.  **Configuration**:
+    *   **Build Pack**: Dockerfile (Coolify should auto-detect it).
+    *   **Environment Variables**:
+        *   Add all variables from your `.env` file:
+            *   `API_TOKEN`
+            *   `API_ID`
+            *   `API_HASH`
+3.  **Persistent Storage** (Optional but recommended):
+    *   If you want to keep the whitelist (`allowed_users.txt`) between restarts, add a volume mount:
+        *   `/app/allowed_users.txt`
+4.  **Deploy**: Click "Deploy".
 
-2.  **Import to Vercel**:
-    *   Go to Vercel Dashboard -> "Add New..." -> "Project".
-    *   Import your GitHub repository.
-    *   **Environment Variables**: Add your `API_TOKEN` in the Vercel project settings (Settings -> Environment Variables).
-        *   Key: `API_TOKEN`
-        *   Value: `8216575053:AAEZWPgZP8Owoc5zlkfNr7UKjTkh3I6H75w` (or your actual token)
+Coolify will build the Docker image (installing Python and FFmpeg) and run your bot.
 
-3.  **Set Webhook**:
-    *   After deployment, you'll get a URL (e.g., `https://your-project.vercel.app`).
-    *   You must tell Telegram to send updates to this URL.
-    *   Run this in your browser:
-        ```
-        https://api.telegram.org/bot<YOUR_BOT_TOKEN>/setWebhook?url=https://<YOUR_VERCEL_URL>/api/index
-        ```
+## Option 2: Docker Compose (Manual VPS)
 
-## ⚠️ Important Limitations on Vercel
+1.  Clone the repo:
+    ```bash
+    git clone https://github.com/MasterinoSplinterino/anydownload.git
+    cd anydownload
+    ```
+2.  Create `.env` file with your keys.
+3.  Run:
+    ```bash
+    docker compose up -d
+    ```
 
-*   **Timeouts**: Vercel functions (Free Tier) time out after **10 seconds**. Downloading/Uploading large videos will likely fail.
-*   **Filesystem**: Read-only (except `/tmp`).
-*   **FFmpeg**: Not installed by default. 1080p downloads (which require merging video+audio) might fail.
-*   **State**: The "Quality Selection" menu relies on in-memory state, which **will be lost** between requests on Vercel. You might need to click the quality button multiple times or it might not work.
+## Option 3: Manual Systemd (Old school)
 
-**Recommendation**: For a video downloader bot, a VPS (like DigitalOcean, Hetzner, or a cheap VM) is **much better** than Serverless/Vercel because it allows long-running processes (downloads) and persistent storage.
+See `README.md` for installation steps, then create a systemd service:
+
+```ini
+[Unit]
+Description=AnyDownload Bot
+After=network.target
+
+[Service]
+User=root
+WorkingDirectory=/path/to/anydownload
+ExecStart=/path/to/anydownload/venv/bin/python bot.py
+Restart=always
+
+[Install]
+WantedBy=multi-user.target
+```
