@@ -1,6 +1,11 @@
-venv/
 __pycache__/
-*.pyc
-downloads/
+*.py[cod]
+*$py.class
+venv/
 .env
 .DS_Store
+downloads/
+*.session
+*.session-journal
+config.py
+allowed_users.txt

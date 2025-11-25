@@ -8,8 +8,13 @@ This bot downloads videos from YouTube and Instagram using `yt-dlp`.
 2.  **Install FFmpeg**:
     *   Download from [ffmpeg.org](https://ffmpeg.org/download.html).
     *   Extract and add the `bin` folder to your system PATH.
-    *   *Note: Without FFmpeg, 1080p downloads might fail or lack audio, and Instagram videos might not be compatible with Telegram.*
-3.  **Install Dependencies**:
+3.  **Get Telegram API Credentials** (Required for large file uploads):
+    *   Go to [my.telegram.org](https://my.telegram.org) and log in.
+    *   Click **API development tools**.
+    *   Create a new application (enter any name/shortname).
+    *   Copy **App api_id** and **App api_hash**.
+    *   Open `config.py` and paste them there.
+4.  **Install Dependencies**:
     ```bash
     python -m venv venv
     venv\Scripts\pip install -r requirements.txt

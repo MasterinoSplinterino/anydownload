@@ -1,4 +1,5 @@
 aiogram
 yt-dlp
-fastapi
-uvicorn
+pyrogram
+tgcrypto
+spotdl
