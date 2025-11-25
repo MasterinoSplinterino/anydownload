@@ -19,6 +19,13 @@ import random
 # ... imports ...
 
 # Initialize bot and dispatcher
+if not API_TOKEN:
+    logging.critical("Error: API_TOKEN is not set! Please check your environment variables.")
+    sys.exit(1)
+
+if not API_ID or not API_HASH:
+    logging.warning("Warning: API_ID or API_HASH not set. Large file uploads via Pyrogram will not work.")
+
 bot = Bot(token=API_TOKEN)
 dp = Dispatcher()
 
