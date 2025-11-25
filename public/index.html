@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AnyDownload Pro - Universal Video Downloader</title>
+    <style>
+        :root {
+            --bg-color: #0f172a;
+            --text-color: #f8fafc;
+            --accent-color: #3b82f6;
+            --accent-hover: #2563eb;
+            --card-bg: #1e293b;
+        }
+
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            margin: 0;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            text-align: center;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 600px;
+            animation: fadeIn 1s ease-out;
+        }
+
+        h1 {
+            font-size: 3rem;
+            margin-bottom: 0.5rem;
+            background: linear-gradient(to right, #60a5fa, #a78bfa);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        p {
+            font-size: 1.25rem;
+            color: #94a3b8;
+            margin-bottom: 2rem;
+            line-height: 1.6;
+        }
+
+        .features {
+            display: flex;
+            justify-content: center;
+            gap: 15px;
+            margin-bottom: 2.5rem;
+            flex-wrap: wrap;
+        }
+
+        .feature-tag {
+            background-color: var(--card-bg);
+            padding: 8px 16px;
+            border-radius: 20px;
+            font-size: 0.9rem;
+            border: 1px solid #334155;
+        }
+
+        .cta-button {
+            display: inline-block;
+            background-color: var(--accent-color);
+            color: white;
+            padding: 16px 32px;
+            font-size: 1.2rem;
+            font-weight: 600;
+            text-decoration: none;
+            border-radius: 50px;
+            transition: transform 0.2s, background-color 0.2s, box-shadow 0.2s;
+            box-shadow: 0 4px 15px rgba(59, 130, 246, 0.4);
+        }
+
+        .cta-button:hover {
+            background-color: var(--accent-hover);
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(59, 130, 246, 0.6);
+        }
+
+        footer {
+            margin-top: 4rem;
+            font-size: 0.9rem;
+            color: #64748b;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(20px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>AnyDownload Pro</h1>
+        <p>
+            The ultimate Telegram bot for downloading high-quality videos and music.
+            Fast, free, and no file size limits.
+        </p>
+
+        <div class="features">
+            <span class="feature-tag">📺 YouTube 1080p</span>
+            <span class="feature-tag">📸 Instagram Reels</span>
+            <span class="feature-tag">🎧 Spotify Music</span>
+            <span class="feature-tag">🚀 Up to 2GB</span>
+        </div>
+
+        <a href="https://t.me/any_download_pro_bot" class="cta-button" target="_blank">
+            Open in Telegram
+        </a>
+
+        <footer>
+            &copy; 2025 AnyDownload Pro. All rights reserved.
+        </footer>
+    </div>
+</body>
+</html>
