@@ -7,5 +7,3 @@ venv/
 downloads/
 *.session
 *.session-journal
-config.py
-allowed_users.txt
