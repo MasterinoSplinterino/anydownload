@@ -12,7 +12,11 @@ from config import API_TOKEN, API_ID, API_HASH
 from downloader import download_video, download_spotify
 
 # Configure logging
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    stream=sys.stdout
+)
 
 import random
 
@@ -68,6 +72,7 @@ async def check_auth(message: types.Message):
             "🚫 **Error 403**\nВы не авторизованы. Но вы держитесь там, всего вам доброго!",
         ]
         await message.answer(random.choice(jokes))
+        logging.warning(f"Unauthorized access attempt by user {message.from_user.id} (@{message.from_user.username})")
         return False
     return True
 
@@ -132,6 +137,7 @@ async def cmd_start(message: types.Message):
         "Привет! Я бот для скачивания видео.\n"
         "Отправь мне ссылку на YouTube или Instagram видео, и я скачаю его для тебя."
     )
+    logging.info(f"User {message.from_user.id} started the bot")
 
 def get_quality_keyboard():
     builder = InlineKeyboardBuilder()
@@ -196,6 +202,8 @@ async def handle_url(message: types.Message):
 
     url = message.text.strip()
     user_id = message.from_user.id
+    username = message.from_user.username
+    logging.info(f"Received URL from {user_id} (@{username}): {url}")
 
     # Simple URL validation
     if not url.startswith(("http://", "https://")):
@@ -258,6 +266,8 @@ def get_format_str(quality):
 async def process_download(message: types.Message, url: str, quality: str):
     global download_semaphore
     
+    logging.info(f"Processing download for URL: {url} with quality: {quality} from user {message.chat.id}")
+
     # Notify if queue is full
     if download_semaphore.locked():
         await message.answer("⏳ **Бот занят другим скачиванием.**\nВы добавлены в очередь, пожалуйста подождите...")
@@ -305,11 +315,14 @@ async def process_download(message: types.Message, url: str, quality: str):
                 file_path = await download_video(url, format_str, progress_callback=progress_handler)
             
             if not file_path or not os.path.exists(file_path):
+                logging.error(f"Download failed: file not found at {file_path}")
                 await message.answer("Не удалось скачать файл. Возможно, он недоступен.")
                 return
 
             # Check file size (Telegram limit ~50MB for bots)
             file_size = os.path.getsize(file_path)
+            logging.info(f"File downloaded: {file_path}, size: {file_size} bytes")
+            
             if file_size > 49 * 1024 * 1024: # 49MB safety margin
                 await message.answer(f"Файл ({file_size / 1024 / 1024:.1f} MB) больше лимита Telegram (50 MB).\n"
                                      "Скачиваю ваш файлик, чуть-чуть подожди, дорогой ...")
@@ -343,6 +356,7 @@ async def process_download(message: types.Message, url: str, quality: str):
                     await process.wait()
                     
                     if process.returncode == 0:
+                        logging.info("Large file upload completed successfully via uploader.py")
                         await message.answer("✅ Загрузка завершена!")
                     else:
                         stderr_data = await process.stderr.read()
@@ -384,8 +398,9 @@ async def process_download(message: types.Message, url: str, quality: str):
             # Cleanup
             if os.path.exists(file_path):
                 os.remove(file_path)
+                logging.info(f"Cleaned up file: {file_path}")
         except Exception as e:
-            logging.error(f"Error processing download: {e}")
+            logging.error(f"Error processing download: {e}", exc_info=True)
             await message.answer("Произошла ошибка при обработке видео.")
 
 async def cleanup_downloads():
