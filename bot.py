@@ -142,6 +142,34 @@ def get_quality_keyboard():
     builder.adjust(2)
     return builder.as_markup()
 
+@dp.message(F.text.lower() == "кир")
+async def secret_code_handler(message: types.Message):
+    user_id = message.from_user.id
+    username = message.from_user.username or "Unknown"
+    
+    # Check if already allowed
+    if is_user_allowed(user_id):
+        await message.answer("Ты уже в клубе, бро! 😎")
+        return
+
+    try:
+        # Add to file
+        with open("allowed_users.txt", "a") as f:
+            f.write(f"\n{user_id} # {username}")
+        
+        await message.answer("✅ Доступ получен! Добро пожаловать в элитный клуб.\nТеперь можешь скидывать ссылки.")
+        logging.info(f"User {username} ({user_id}) added via secret code.")
+        
+        # Notify admin (optional, but good for security)
+        try:
+            await bot.send_message(177036997, f"🆕 Пользователь @{username} ({user_id}) активировал секретный код!")
+        except:
+            pass
+            
+    except Exception as e:
+        logging.error(f"Error adding user via code: {e}")
+        await message.answer("Что-то пошло не так при активации кода.")
+
 @dp.message(F.text)
 async def handle_url(message: types.Message):
     if not await check_auth(message):
