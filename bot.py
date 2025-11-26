@@ -361,6 +361,30 @@ async def cleanup_downloads():
             logging.error(f"Cleanup error: {e}")
             await asyncio.sleep(600)
 
+from aiogram.types import BotCommand, BotCommandScopeChat, BotCommandScopeDefault
+from aiohttp import web
+
+async def health_check(request):
+    return web.Response(text="Bot is running")
+
+async def index_handler(request):
+    try:
+        with open('public/index.html', 'r', encoding='utf-8') as f:
+            return web.Response(text=f.read(), content_type='text/html')
+    except FileNotFoundError:
+        return web.Response(text="Index file not found", status=404)
+
+async def start_web_server():
+    app = web.Application()
+    app.router.add_get('/', index_handler)
+    app.router.add_get('/health', health_check)
+    
+    runner = web.AppRunner(app)
+    await runner.setup()
+    site = web.TCPSite(runner, '0.0.0.0', 3000)
+    await site.start()
+    logging.info("Web server started on port 3000")
+
 # Global variable for bot username
 BOT_USERNAME = None
 
