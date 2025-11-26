@@ -16,12 +16,19 @@ if not os.path.exists(file_path):
     print(f"File not found: {file_path}")
     sys.exit(1)
 
+try:
+    import tgcrypto
+    print("Fast crypto (tgcrypto) is available.", flush=True)
+except ImportError:
+    print("Warning: tgcrypto not found. Uploads will be slower.", flush=True)
+
 app = Client(
     "uploader_session",
     api_id=API_ID,
     api_hash=API_HASH,
     bot_token=API_TOKEN,
-    ipv6=False
+    ipv6=False,
+    max_concurrent_transmissions=4
 )
 
 async def main():
