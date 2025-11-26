@@ -323,8 +323,12 @@ async def process_download(message: types.Message, url: str, quality: str):
             file_size = os.path.getsize(file_path)
             logging.info(f"File downloaded: {file_path}, size: {file_size} bytes")
             
-            if file_size > 49 * 1024 * 1024: # 49MB safety margin
-                await message.answer(f"Файл ({file_size / 1024 / 1024:.1f} MB) больше лимита Telegram (50 MB).\n"
+            # Use Pyrogram (uploader.py) for larger files if credentials are available
+            # Lower threshold to 40MB to avoid timeouts with Bot API on slower connections
+            large_file_threshold = 40 * 1024 * 1024 if (API_ID and API_HASH) else 49 * 1024 * 1024
+
+            if file_size > large_file_threshold:
+                await message.answer(f"Файл ({file_size / 1024 / 1024:.1f} MB) большой.\n"
                                      "Скачиваю ваш файлик, чуть-чуть подожди, дорогой ...")
                 
                 try:
@@ -379,19 +383,30 @@ async def process_download(message: types.Message, url: str, quality: str):
             try:
                 caption_text = f"Скачано с помощью @{BOT_USERNAME}" if BOT_USERNAME else "Скачано ботом"
                 
-                if quality in ["audio", "spotify"]:
-                     await message.answer_audio(
-                        video_file,
-                        caption=f"🎧 {caption_text}",
-                        request_timeout=300
-                     )
-                else:
-                     await message.answer_video(
-                        video_file,
-                        caption=f"📹 {caption_text}",
-                        supports_streaming=True,
-                        request_timeout=300
-                     )
+                # Retry logic for upload
+                max_retries = 3
+                for attempt in range(max_retries):
+                    try:
+                        if quality in ["audio", "spotify"]:
+                             await message.answer_audio(
+                                video_file,
+                                caption=f"🎧 {caption_text}",
+                                request_timeout=1200
+                             )
+                        else:
+                             await message.answer_video(
+                                video_file,
+                                caption=f"📹 {caption_text}",
+                                supports_streaming=True,
+                                request_timeout=1200
+                             )
+                        break # Success
+                    except Exception as e:
+                        if attempt == max_retries - 1:
+                            raise e
+                        logging.warning(f"Upload attempt {attempt + 1} failed: {e}. Retrying...")
+                        await asyncio.sleep(2)
+
             except Exception as e:
                 await message.answer(f"Ошибка при отправке файла: {e}")
             
