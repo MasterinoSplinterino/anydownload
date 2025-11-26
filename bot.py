@@ -237,130 +237,137 @@ def get_format_str(quality):
     return "best"
 
 async def process_download(message: types.Message, url: str, quality: str):
-    try:
-        # Progress update logic
-        last_edit_time = 0
-        
-        def progress_handler(d):
-            nonlocal last_edit_time
-            import time
-            current_time = time.time()
+    global download_semaphore
+    
+    # Notify if queue is full
+    if download_semaphore.locked():
+        await message.answer("⏳ **Бот занят другим скачиванием.**\nВы добавлены в очередь, пожалуйста подождите...")
+
+    async with download_semaphore:
+        try:
+            # Progress update logic
+            last_edit_time = 0
             
-            # Update every 3 seconds to avoid flood limits
-            if current_time - last_edit_time < 3:
+            def progress_handler(d):
+                nonlocal last_edit_time
+                import time
+                current_time = time.time()
+                
+                # Update every 3 seconds to avoid flood limits
+                if current_time - last_edit_time < 3:
+                    return
+
+                percent = d.get('_percent_str', 'N/A')
+                eta = d.get('_eta_str', 'N/A')
+                speed = d.get('_speed_str', 'N/A')
+                
+                # Clean up ANSI codes if present
+                percent = re.sub(r'\x1b\[[0-9;]*m', '', str(percent))
+                eta = re.sub(r'\x1b\[[0-9;]*m', '', str(eta))
+                speed = re.sub(r'\x1b\[[0-9;]*m', '', str(speed))
+                
+                text = f"📥 **Скачиваю:** {percent}\n🚀 **Скорость:** {speed}\n⏳ **Осталось:** {eta}"
+                
+                try:
+                    # Schedule async update in the main loop
+                    asyncio.run_coroutine_threadsafe(
+                        message.edit_text(text),
+                        asyncio.get_running_loop()
+                    )
+                    last_edit_time = current_time
+                except Exception:
+                    pass
+
+            if quality == "spotify":
+                file_path = await download_spotify(url)
+            else:
+                format_str = get_format_str(quality)
+                # Pass progress_handler only for video downloads
+                file_path = await download_video(url, format_str, progress_callback=progress_handler)
+            
+            if not file_path or not os.path.exists(file_path):
+                await message.answer("Не удалось скачать файл. Возможно, он недоступен.")
                 return
 
-            percent = d.get('_percent_str', 'N/A')
-            eta = d.get('_eta_str', 'N/A')
-            speed = d.get('_speed_str', 'N/A')
-            
-            # Clean up ANSI codes if present
-            percent = re.sub(r'\x1b\[[0-9;]*m', '', str(percent))
-            eta = re.sub(r'\x1b\[[0-9;]*m', '', str(eta))
-            speed = re.sub(r'\x1b\[[0-9;]*m', '', str(speed))
-            
-            text = f"📥 **Скачиваю:** {percent}\n🚀 **Скорость:** {speed}\n⏳ **Осталось:** {eta}"
-            
-            try:
-                # Schedule async update in the main loop
-                asyncio.run_coroutine_threadsafe(
-                    message.edit_text(text),
-                    asyncio.get_running_loop()
-                )
-                last_edit_time = current_time
-            except Exception:
-                pass
-
-        if quality == "spotify":
-            file_path = await download_spotify(url)
-        else:
-            format_str = get_format_str(quality)
-            # Pass progress_handler only for video downloads
-            file_path = await download_video(url, format_str, progress_callback=progress_handler)
-        
-        if not file_path or not os.path.exists(file_path):
-            await message.answer("Не удалось скачать файл. Возможно, он недоступен.")
-            return
-
-        # Check file size (Telegram limit ~50MB for bots)
-        file_size = os.path.getsize(file_path)
-        if file_size > 49 * 1024 * 1024: # 49MB safety margin
-            await message.answer(f"Файл ({file_size / 1024 / 1024:.1f} MB) больше лимита Telegram (50 MB).\n"
-                                 "Скачиваю ваш файлик, чуть-чуть подожди, дорогой ...")
-            
-            try:
-                # Run uploader.py as a separate process
-                import subprocess
+            # Check file size (Telegram limit ~50MB for bots)
+            file_size = os.path.getsize(file_path)
+            if file_size > 49 * 1024 * 1024: # 49MB safety margin
+                await message.answer(f"Файл ({file_size / 1024 / 1024:.1f} MB) больше лимита Telegram (50 MB).\n"
+                                     "Скачиваю ваш файлик, чуть-чуть подожди, дорогой ...")
                 
-                # Use the same python interpreter
-                python_executable = sys.executable
-                
-                process = await asyncio.create_subprocess_exec(
-                    python_executable, "uploader.py", str(message.chat.id), file_path,
-                    stdout=asyncio.subprocess.PIPE,
-                    stderr=asyncio.subprocess.PIPE
-                )
-                
-                # Wait for it to finish and read stdout
-                while True:
-                    line = await process.stdout.readline()
-                    if not line:
-                        break
+                try:
+                    # Run uploader.py as a separate process
+                    import subprocess
                     
-                    line_str = line.decode().strip()
-                    if "Progress:" in line_str:
-                        try:
-                            await message.edit_text(f"📤 **Загрузка в Telegram:** {line_str.split(': ')[1]}")
-                        except Exception:
-                            pass
+                    # Use the same python interpreter
+                    python_executable = sys.executable
+                    
+                    process = await asyncio.create_subprocess_exec(
+                        python_executable, "uploader.py", str(message.chat.id), file_path,
+                        stdout=asyncio.subprocess.PIPE,
+                        stderr=asyncio.subprocess.PIPE
+                    )
+                    
+                    # Wait for it to finish and read stdout
+                    while True:
+                        line = await process.stdout.readline()
+                        if not line:
+                            break
+                        
+                        line_str = line.decode().strip()
+                        if "Progress:" in line_str:
+                            try:
+                                await message.edit_text(f"📤 **Загрузка в Telegram:** {line_str.split(': ')[1]}")
+                            except Exception:
+                                pass
+                    
+                    await process.wait()
+                    
+                    if process.returncode == 0:
+                        await message.answer("✅ Загрузка завершена!")
+                    else:
+                        stderr_data = await process.stderr.read()
+                        error_msg = stderr_data.decode().strip()
+                        logging.error(f"Uploader error: {error_msg}")
+                        await message.answer(f"Ошибка при загрузке: {error_msg}")
                 
-                await process.wait()
+                except Exception as e:
+                    logging.error(f"Subprocess error: {e}")
+                    await message.answer(f"Не удалось запустить загрузчик: {e}")
                 
-                if process.returncode == 0:
-                    await message.answer("✅ Загрузка завершена!")
-                else:
-                    stderr_data = await process.stderr.read()
-                    error_msg = stderr_data.decode().strip()
-                    logging.error(f"Uploader error: {error_msg}")
-                    await message.answer(f"Ошибка при загрузке: {error_msg}")
+                # Cleanup
+                if os.path.exists(file_path):
+                    os.remove(file_path)
+                return
+
+            await message.answer("Загружаю видео в Telegram...")
             
+            video_file = FSInputFile(file_path)
+            try:
+                caption_text = f"Скачано с помощью @{BOT_USERNAME}" if BOT_USERNAME else "Скачано ботом"
+                
+                if quality in ["audio", "spotify"]:
+                     await message.answer_audio(
+                        video_file,
+                        caption=f"🎧 {caption_text}",
+                        request_timeout=300
+                     )
+                else:
+                     await message.answer_video(
+                        video_file,
+                        caption=f"📹 {caption_text}",
+                        supports_streaming=True,
+                        request_timeout=300
+                     )
             except Exception as e:
-                logging.error(f"Subprocess error: {e}")
-                await message.answer(f"Не удалось запустить загрузчик: {e}")
+                await message.answer(f"Ошибка при отправке файла: {e}")
             
             # Cleanup
             if os.path.exists(file_path):
                 os.remove(file_path)
-            return
-
-        await message.answer("Загружаю видео в Telegram...")
-        
-        video_file = FSInputFile(file_path)
-        try:
-            caption_text = f"Скачано с помощью @{BOT_USERNAME}" if BOT_USERNAME else "Скачано ботом"
-            
-            if quality in ["audio", "spotify"]:
-                 await message.answer_audio(
-                    video_file,
-                    caption=f"🎧 {caption_text}",
-                    request_timeout=300
-                 )
-            else:
-                 await message.answer_video(
-                    video_file,
-                    caption=f"📹 {caption_text}",
-                    supports_streaming=True,
-                    request_timeout=300
-                 )
         except Exception as e:
-            await message.answer(f"Ошибка при отправке файла: {e}")
-        
-        # Cleanup
-        if os.path.exists(file_path):
-            os.remove(file_path)
-    except Exception as e:
-        logging.error(f"Error processing download: {e}")
-        await message.answer("Произошла ошибка при обработке видео.")
+            logging.error(f"Error processing download: {e}")
+            await message.answer("Произошла ошибка при обработке видео.")
 
 async def cleanup_downloads():
     """Periodically clean up the downloads directory."""
@@ -415,11 +422,16 @@ async def start_web_server():
 
 # Global variable for bot username
 BOT_USERNAME = None
+# Semaphore to limit concurrent downloads
+download_semaphore = None
 
 async def main():
-    global BOT_USERNAME
+    global BOT_USERNAME, download_semaphore
     print("Starting bot...")
     logging.info("Starting bot...")
+    
+    # Initialize semaphore
+    download_semaphore = asyncio.Semaphore(1)
     
     # Start cleanup task
     asyncio.create_task(cleanup_downloads())
