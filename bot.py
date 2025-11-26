@@ -142,6 +142,25 @@ def get_quality_keyboard():
     builder.adjust(2)
     return builder.as_markup()
 
+@dp.message(Command("kir"))
+async def cmd_kir(message: types.Message):
+    try:
+        if not os.path.exists("wishes.txt"):
+             await message.answer("Файл с пожеланиями не найден. Грусть.")
+             return
+
+        with open("wishes.txt", "r", encoding="utf-8") as f:
+            wishes = f.readlines()
+        
+        if wishes:
+            wish = random.choice(wishes).strip()
+            await message.answer(f"✨ {wish}")
+        else:
+            await message.answer("Шутки кончились, иди работай!")
+    except Exception as e:
+        logging.error(f"Error reading wishes: {e}")
+        await message.answer("Что-то пошло не так при чтении пожеланий.")
+
 @dp.message(F.text.lower() == "кир")
 async def secret_code_handler(message: types.Message):
     user_id = message.from_user.id
@@ -452,6 +471,7 @@ async def main():
     await bot.set_my_commands(
         [
             BotCommand(command="start", description="Запустить бота"),
+            BotCommand(command="kir", description="Получить пожелание"),
         ],
         scope=BotCommandScopeDefault()
     )
@@ -462,6 +482,7 @@ async def main():
             [
                 BotCommand(command="start", description="Запустить бота"),
                 BotCommand(command="add", description="Добавить пользователя"),
+                BotCommand(command="kir", description="Получить пожелание"),
             ],
             scope=BotCommandScopeChat(chat_id=177036997)
         )
