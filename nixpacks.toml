@@ -6,4 +6,4 @@ cmds = ["python -m venv --copies /opt/venv && . /opt/venv/bin/activate && pip in
 cacheDirectories = ["/root/.cache/pip", "/var/cache/apt"]
 
 [start]
-cmd = "python bot.py"
+cmd = "python -u bot.py"
