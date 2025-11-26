@@ -273,13 +273,26 @@ async def process_download(message: types.Message, url: str, quality: str):
                     stderr=asyncio.subprocess.PIPE
                 )
                 
-                # Wait for it to finish
-                stdout, stderr = await process.communicate()
+                # Wait for it to finish and read stdout
+                while True:
+                    line = await process.stdout.readline()
+                    if not line:
+                        break
+                    
+                    line_str = line.decode().strip()
+                    if "Progress:" in line_str:
+                        try:
+                            await message.edit_text(f"📤 **Загрузка в Telegram:** {line_str.split(': ')[1]}")
+                        except Exception:
+                            pass
+                
+                await process.wait()
                 
                 if process.returncode == 0:
                     await message.answer("✅ Загрузка завершена!")
                 else:
-                    error_msg = stderr.decode().strip()
+                    stderr_data = await process.stderr.read()
+                    error_msg = stderr_data.decode().strip()
                     logging.error(f"Uploader error: {error_msg}")
                     await message.answer(f"Ошибка при загрузке: {error_msg}")
             
