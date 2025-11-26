@@ -4,3 +4,4 @@ pyrogram
 tgcrypto
 spotdl
 python-dotenv
+aiohttp
