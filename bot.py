@@ -309,16 +309,18 @@ async def process_download(message: types.Message, url: str, quality: str):
         
         video_file = FSInputFile(file_path)
         try:
+            caption_text = f"Скачано с помощью @{BOT_USERNAME}" if BOT_USERNAME else "Скачано ботом"
+            
             if quality in ["audio", "spotify"]:
                  await message.answer_audio(
                     video_file,
-                    caption=f"🎧 Скачано с помощью @{bot.get_me().username}",
+                    caption=f"🎧 {caption_text}",
                     request_timeout=300
                  )
             else:
                  await message.answer_video(
                     video_file,
-                    caption=f"📹 Скачано с помощью @{bot.get_me().username}",
+                    caption=f"📹 {caption_text}",
                     supports_streaming=True,
                     request_timeout=300
                  )
@@ -358,3 +360,61 @@ async def cleanup_downloads():
         except Exception as e:
             logging.error(f"Cleanup error: {e}")
             await asyncio.sleep(600)
+
+# Global variable for bot username
+BOT_USERNAME = None
+
+async def main():
+    global BOT_USERNAME
+    print("Starting bot...")
+    logging.info("Starting bot...")
+    
+    # Start cleanup task
+    asyncio.create_task(cleanup_downloads())
+    
+    # Start web server
+    await start_web_server()
+    
+    # Get bot info
+    try:
+        bot_info = await bot.get_me()
+        BOT_USERNAME = bot_info.username
+        logging.info(f"Bot started as @{BOT_USERNAME}")
+    except Exception as e:
+        logging.error(f"Failed to get bot info: {e}")
+        # Continue anyway, just won't have username in captions
+    
+    # Set default commands
+    await bot.set_my_commands(
+        [
+            BotCommand(command="start", description="Запустить бота"),
+        ],
+        scope=BotCommandScopeDefault()
+    )
+    
+    # Set admin commands
+    try:
+        await bot.set_my_commands(
+            [
+                BotCommand(command="start", description="Запустить бота"),
+                BotCommand(command="add", description="Добавить пользователя"),
+            ],
+            scope=BotCommandScopeChat(chat_id=177036997)
+        )
+    except Exception as e:
+        logging.error(f"Failed to set admin commands: {e}")
+
+    # Start aiogram polling
+    print("Starting polling...")
+    await dp.start_polling(bot)
+
+
+if __name__ == "__main__":
+    try:
+        asyncio.run(main())
+    except KeyboardInterrupt:
+        print("Bot stopped")
+    except Exception as e:
+        print(f"Critical error: {e}")
+        logging.critical(f"Critical error: {e}")
+        sys.exit(1)
