@@ -297,21 +297,27 @@ async def process_download(message: types.Message, url: str, quality: str):
         video_file = FSInputFile(file_path)
         try:
             if quality in ["audio", "spotify"]:
-                 await message.answer_audio(video_file)
+                 await message.answer_audio(
+                    video_file,
+                    caption=f"🎧 Скачано с помощью @{bot.get_me().username}",
+                    request_timeout=300
+                 )
             else:
-                 await message.answer_video(video_file)
+                 await message.answer_video(
+                    video_file,
+                    caption=f"📹 Скачано с помощью @{bot.get_me().username}",
+                    supports_streaming=True,
+                    request_timeout=300
+                 )
         except Exception as e:
             await message.answer(f"Ошибка при отправке файла: {e}")
         
         # Cleanup
         if os.path.exists(file_path):
             os.remove(file_path)
-
     except Exception as e:
         logging.error(f"Error processing download: {e}")
         await message.answer("Произошла ошибка при обработке видео.")
-
-
 
 async def cleanup_downloads():
     """Periodically clean up the downloads directory."""
@@ -339,61 +345,3 @@ async def cleanup_downloads():
         except Exception as e:
             logging.error(f"Cleanup error: {e}")
             await asyncio.sleep(600)
-
-from aiogram.types import BotCommand, BotCommandScopeChat, BotCommandScopeDefault
-from aiohttp import web
-
-async def health_check(request):
-    return web.Response(text="Bot is running")
-
-async def index_handler(request):
-    try:
-        with open('public/index.html', 'r', encoding='utf-8') as f:
-            return web.Response(text=f.read(), content_type='text/html')
-    except FileNotFoundError:
-        return web.Response(text="Index file not found", status=404)
-
-async def start_web_server():
-    app = web.Application()
-    app.router.add_get('/', index_handler)
-    app.router.add_get('/health', health_check)
-    
-    runner = web.AppRunner(app)
-    await runner.setup()
-    site = web.TCPSite(runner, '0.0.0.0', 3000)
-    await site.start()
-    logging.info("Web server started on port 3000")
-
-async def main():
-    # Start cleanup task
-    asyncio.create_task(cleanup_downloads())
-    
-    # Start web server
-    await start_web_server()
-    
-    # Set default commands
-    await bot.set_my_commands(
-        [
-            BotCommand(command="start", description="Запустить бота"),
-        ],
-        scope=BotCommandScopeDefault()
-    )
-    
-    # Set admin commands
-    try:
-        await bot.set_my_commands(
-            [
-                BotCommand(command="start", description="Запустить бота"),
-                BotCommand(command="add", description="Добавить пользователя"),
-            ],
-            scope=BotCommandScopeChat(chat_id=177036997)
-        )
-    except Exception as e:
-        logging.error(f"Failed to set admin commands: {e}")
-
-    # Start aiogram polling
-    await dp.start_polling(bot)
-
-
-if __name__ == "__main__":
-    asyncio.run(main())
