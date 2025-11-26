@@ -28,11 +28,18 @@ async def main():
     async with app:
         print(f"Uploading {file_path} to {chat_id}...")
         
+        import time
+        last_print_time = 0
+
         async def progress(current, total):
-            percent = current * 100 / total
-            # Print every 10% or so to avoid flooding logs
-            if int(percent) % 10 == 0:
+            nonlocal last_print_time
+            current_time = time.time()
+            
+            # Print every 3 seconds to ensure user sees progress
+            if current_time - last_print_time >= 3:
+                percent = current * 100 / total
                 print(f"Progress: {percent:.1f}%", flush=True)
+                last_print_time = current_time
 
         try:
             await app.send_video(
