@@ -44,6 +44,8 @@ def load_allowed_users():
             for line in f:
                 line = line.strip()
                 if line and not line.startswith("#"):
+                    # Remove inline comments
+                    line = line.split('#')[0].strip()
                     try:
                         users.add(int(line))
                     except ValueError:
