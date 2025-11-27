@@ -460,7 +460,7 @@ async def main():
     logging.info("Starting bot...")
     
     # Initialize semaphore
-    download_semaphore = asyncio.Semaphore(1)
+    download_semaphore = asyncio.Semaphore(5)
     
     # Start cleanup task
     asyncio.create_task(cleanup_downloads())

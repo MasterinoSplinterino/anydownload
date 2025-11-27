@@ -14,7 +14,7 @@ else:
     if not os.path.exists(DOWNLOAD_DIR):
         os.makedirs(DOWNLOAD_DIR)
 
-executor = ThreadPoolExecutor(max_workers=2)
+executor = ThreadPoolExecutor(max_workers=5)
 
 def get_video_info_sync(url):
     ydl_opts = {
