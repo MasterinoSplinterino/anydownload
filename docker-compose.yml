@@ -2,13 +2,32 @@ version: '3.8'
 
 services:
   bot:
-    build: .
-    restart: always
-    # Load environment variables from .env file
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: youtube-bot
+    restart: unless-stopped
     env_file:
       - .env
-    # Persist data
+    environment:
+      - DB_PATH=/app/data/bot.db
     volumes:
-      - ./downloads:/app/downloads
-      - ./allowed_users.txt:/app/allowed_users.txt
-      - ./uploader_session.session:/app/uploader_session.session
+      # Persistent data storage
+      - bot_data:/app/data
+      - bot_downloads:/app/downloads
+      # Pyrogram session (for large file uploads)
+      - bot_sessions:/app/sessions
+    healthcheck:
+      test: ["CMD", "python", "-c", "import sys; sys.exit(0)"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+volumes:
+  bot_data:
+    driver: local
+  bot_downloads:
+    driver: local
+  bot_sessions:
+    driver: local

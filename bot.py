@@ -10,6 +10,7 @@ from aiogram.utils.keyboard import InlineKeyboardBuilder
 
 from config import API_TOKEN, API_ID, API_HASH
 from downloader import download_video, download_spotify
+from database import is_user_allowed, add_user, migrate_from_file, get_user_count
 
 # Configure logging
 logging.basicConfig(
@@ -36,29 +37,6 @@ dp = Dispatcher()
 # Store user URLs temporarily: {user_id: url}
 user_urls = {}
 
-def load_allowed_users():
-    """Load allowed user IDs from allowed_users.txt"""
-    users = set()
-    if os.path.exists("allowed_users.txt"):
-        with open("allowed_users.txt", "r") as f:
-            for line in f:
-                line = line.strip()
-                if line and not line.startswith("#"):
-                    # Remove inline comments
-                    line = line.split('#')[0].strip()
-                    try:
-                        users.add(int(line))
-                    except ValueError:
-                        pass
-    return users
-
-def is_user_allowed(user_id):
-    allowed_users = load_allowed_users()
-    # If file is empty or only comments, maybe allow everyone? 
-    # Or strictly deny? The user asked for a check, so strictly deny if not in list.
-    # But for testing, if list is empty, maybe we should warn?
-    # Let's assume strict whitelist.
-    return user_id in allowed_users
 
 async def check_auth(message: types.Message):
     # Admin is always allowed
@@ -109,18 +87,17 @@ async def cmd_add_user(message: types.Message):
         if process.returncode == 0:
             try:
                 new_user_id = int(stdout.decode().strip())
-                
+
                 # Check if already exists
-                current_users = load_allowed_users()
-                if new_user_id in current_users:
+                if is_user_allowed(new_user_id):
                     await status_msg.edit_text(f"⚠️ Пользователь @{username} (ID: {new_user_id}) уже есть в списке.")
                     return
 
-                # Add to file
-                with open("allowed_users.txt", "a") as f:
-                    f.write(f"\n{new_user_id} # {username}")
-                
-                await status_msg.edit_text(f"✅ Пользователь @{username} (ID: `{new_user_id}`) успешно добавлен!")
+                # Add to database
+                if add_user(new_user_id, username, added_by="admin"):
+                    await status_msg.edit_text(f"✅ Пользователь @{username} (ID: `{new_user_id}`) успешно добавлен!")
+                else:
+                    await status_msg.edit_text(f"❌ Ошибка добавления пользователя в базу данных.")
             except ValueError:
                  await status_msg.edit_text(f"❌ Ошибка чтения ID. Ответ: {stdout.decode()}")
         else:
@@ -179,22 +156,17 @@ async def secret_code_handler(message: types.Message):
         await message.answer("Ты уже в клубе, бро! 😎")
         return
 
-    try:
-        # Add to file
-        with open("allowed_users.txt", "a") as f:
-            f.write(f"\n{user_id} # {username}")
-        
+    # Add to database
+    if add_user(user_id, username, added_by="secret_code"):
         await message.answer("✅ Доступ получен! Добро пожаловать в элитный клуб.\nТеперь можешь скидывать ссылки.")
         logging.info(f"User {username} ({user_id}) added via secret code.")
-        
-        # Notify admin (optional, but good for security)
+
+        # Notify admin
         try:
             await bot.send_message(177036997, f"🆕 Пользователь @{username} ({user_id}) активировал секретный код!")
         except:
             pass
-            
-    except Exception as e:
-        logging.error(f"Error adding user via code: {e}")
+    else:
         await message.answer("Что-то пошло не так при активации кода.")
 
 @dp.message(F.text)
@@ -458,10 +430,22 @@ async def main():
     global BOT_USERNAME, download_semaphore
     print("Starting bot...")
     logging.info("Starting bot...")
-    
+
+    # Migrate users from old file-based system (one-time)
+    if os.path.exists("allowed_users.txt"):
+        migrated = migrate_from_file("allowed_users.txt")
+        if migrated > 0:
+            logging.info(f"Migrated {migrated} users from allowed_users.txt")
+            # Rename old file to keep backup
+            os.rename("allowed_users.txt", "allowed_users.txt.bak")
+            logging.info("Renamed allowed_users.txt to allowed_users.txt.bak")
+
+    user_count = get_user_count()
+    logging.info(f"Total allowed users in database: {user_count}")
+
     # Initialize semaphore
     download_semaphore = asyncio.Semaphore(5)
-    
+
     # Start cleanup task
     asyncio.create_task(cleanup_downloads())
     

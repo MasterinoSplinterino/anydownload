@@ -1,0 +1,47 @@
+# Git
+.git
+.gitignore
+
+# Python
+__pycache__
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+.venv/
+ENV/
+env/
+*.egg-info/
+.eggs/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Environment
+.env
+.env.local
+
+# Data (handled by volumes)
+data/
+downloads/
+sessions/
+*.session
+
+# Logs
+*.log
+
+# Docs
+*.md
+!requirements.txt
+
+# Backup files
+*.bak
+allowed_users.txt
+
+# OS
+.DS_Store
+Thumbs.db
