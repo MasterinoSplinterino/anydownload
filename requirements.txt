@@ -5,3 +5,6 @@ tgcrypto
 spotdl
 python-dotenv
 aiohttp
+requests
+yt-dlp-get-pot
+bgutil-ytdlp-pot-provider

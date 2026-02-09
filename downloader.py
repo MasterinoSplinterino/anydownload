@@ -46,11 +46,11 @@ def download_video_sync(url, format_str=None, output_filename=None, progress_cal
     print(f"[DOWNLOAD] COOKIES_PATH={COOKIES_PATH}, exists={os.path.exists(COOKIES_PATH)}")
 
     # Try different player clients in order of preference
-    # web first because it supports cookies for better quality
+    # mweb with PO Token plugin provides best results for 1080p
     player_clients = [
-        ['web'],             # Web client with cookies - best quality
-        ['mweb'],            # Mobile web
-        ['tv'],              # TV client
+        ['default', 'mweb'],  # Default + mweb with PO Token for best quality
+        ['web'],              # Web client with cookies
+        ['tv'],               # TV client as fallback
     ]
 
     for clients in player_clients:
@@ -98,7 +98,10 @@ def download_video_sync(url, format_str=None, output_filename=None, progress_cal
                 print(f"[DOWNLOAD] Starting download...")
                 info = ydl.extract_info(url, download=True)
                 filename = ydl.prepare_filename(info)
-                print(f"[DOWNLOAD] Success: {filename}")
+
+                # Log actual quality downloaded
+                actual_height = info.get('height', 'unknown')
+                print(f"[DOWNLOAD] Success: {filename} (quality: {actual_height}p)")
                 return filename
         except yt_dlp.utils.DownloadError as e:
             error_str = str(e)
@@ -108,8 +111,19 @@ def download_video_sync(url, format_str=None, output_filename=None, progress_cal
                 print(f"[DOWNLOAD] Bot detection triggered, trying next player client...")
                 continue
             elif "Requested format is not available" in error_str:
-                print(f"[DOWNLOAD] Format not available with {clients}, trying next...")
-                continue
+                # Try to download best available format instead
+                print(f"[DOWNLOAD] Requested format not available, trying best available...")
+                try:
+                    ydl_opts['format'] = 'best'
+                    with yt_dlp.YoutubeDL(ydl_opts) as ydl_fallback:
+                        info = ydl_fallback.extract_info(url, download=True)
+                        filename = ydl_fallback.prepare_filename(info)
+                        actual_height = info.get('height', 'unknown')
+                        print(f"[DOWNLOAD] Fallback success: {filename} (quality: {actual_height}p)")
+                        return filename
+                except Exception as fallback_e:
+                    print(f"[DOWNLOAD] Fallback also failed: {fallback_e}")
+                    continue
             elif "ffmpeg is not installed" in error_str:
                 # Try without merge
                 try:
