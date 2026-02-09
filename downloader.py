@@ -22,6 +22,8 @@ def get_video_info_sync(url):
         'quiet': True,
         'no_warnings': True,
         'extractor_args': {'youtube': {'player_client': ['web']}},
+        'js_runtimes': ['node'],
+        'remote_components': ['ejs:github'],
     }
     # Add cookies if file exists
     if os.path.exists(COOKIES_PATH):
@@ -66,6 +68,9 @@ def download_video_sync(url, format_str=None, output_filename=None, progress_cal
             'force_ipv4': True,  # Force IPv4 to avoid some bot detection
             'sleep_interval': 1,  # Add delay between requests
             'max_sleep_interval': 3,
+            # JavaScript runtime for solving YouTube challenges
+            'js_runtimes': ['node'],
+            'remote_components': ['ejs:github'],
         }
 
         if os.path.exists(COOKIES_PATH):
