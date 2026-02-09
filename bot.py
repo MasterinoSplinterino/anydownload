@@ -114,11 +114,19 @@ async def cmd_add_user(message: types.Message):
 async def cmd_start(message: types.Message):
     if not await check_auth(message):
         return
-        
-    await message.answer(
-        "Привет! Я бот для скачивания видео.\n"
-        "Отправь мне ссылку на YouTube или Instagram видео, и я скачаю его для тебя."
+
+    welcome_text = (
+        f"👋 Йоу, {message.from_user.first_name}!\n\n"
+        "Я умею скачивать видео практически откуда угодно:\n\n"
+        "📺 YouTube (до 1080p)\n"
+        "🎵 TikTok\n"
+        "📸 Instagram\n"
+        "🐦 Twitter/X\n"
+        "🎧 Spotify\n"
+        "...и ещё 1800+ сайтов!\n\n"
+        "Просто кинь мне ссылку и я всё сделаю 🚀"
     )
+    await message.answer(welcome_text)
     logging.info(f"User {message.from_user.id} started the bot")
 
 def get_quality_keyboard():
