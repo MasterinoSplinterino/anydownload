@@ -9,7 +9,7 @@ from aiogram.types import FSInputFile, InlineKeyboardMarkup, InlineKeyboardButto
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 
 from config import API_TOKEN, API_ID, API_HASH, setup_cookies
-from downloader import download_video, download_spotify
+from downloader import download_video, download_spotify, upload_to_gofile
 from database import is_user_allowed, add_user, migrate_from_file, get_user_count
 
 # Setup cookies from environment variable on startup
@@ -298,8 +298,32 @@ async def process_download(message: types.Message, url: str, quality: str):
 
             # Check file size (Telegram limit ~50MB for bots)
             file_size = os.path.getsize(file_path)
-            logging.info(f"File downloaded: {file_path}, size: {file_size} bytes")
-            
+            file_size_mb = file_size / 1024 / 1024
+            logging.info(f"File downloaded: {file_path}, size: {file_size_mb:.1f} MB")
+
+            # For very large files (>200MB), upload to Gofile instead
+            gofile_threshold = 200 * 1024 * 1024
+
+            if file_size > gofile_threshold:
+                await message.answer(f"📦 Файл большой ({file_size_mb:.1f} MB).\nЗагружаю на файлообменник...")
+
+                gofile_url = await upload_to_gofile(file_path)
+
+                if gofile_url:
+                    await message.answer(
+                        f"✅ **Файл загружен!**\n\n"
+                        f"📥 [Скачать файл]({gofile_url})\n\n"
+                        f"⚠️ Ссылка действительна 10 дней",
+                        parse_mode="Markdown"
+                    )
+                else:
+                    await message.answer("❌ Не удалось загрузить файл на файлообменник.")
+
+                # Cleanup
+                if os.path.exists(file_path):
+                    os.remove(file_path)
+                return
+
             # Use Pyrogram (uploader.py) for larger files if credentials are available
             # Lower threshold to 40MB to avoid timeouts with Bot API on slower connections
             large_file_threshold = 40 * 1024 * 1024 if (API_ID and API_HASH) else 49 * 1024 * 1024

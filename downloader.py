@@ -5,6 +5,7 @@ from concurrent.futures import ThreadPoolExecutor
 import sys
 import subprocess
 import glob
+import requests
 from config import COOKIES_PATH
 
 # Create a downloads directory if it doesn't exist
@@ -45,11 +46,11 @@ def download_video_sync(url, format_str=None, output_filename=None, progress_cal
     print(f"[DOWNLOAD] COOKIES_PATH={COOKIES_PATH}, exists={os.path.exists(COOKIES_PATH)}")
 
     # Try different player clients in order of preference
+    # web first because it supports cookies for better quality
     player_clients = [
-        ['ios', 'web'],      # iOS client often bypasses restrictions
-        ['android', 'web'],  # Android as fallback
-        ['web'],             # Web only
-        ['tv_embedded'],     # TV embedded player
+        ['web'],             # Web client with cookies - best quality
+        ['mweb'],            # Mobile web
+        ['tv'],              # TV client
     ]
 
     for clients in player_clients:
@@ -177,3 +178,49 @@ async def download_spotify(url):
 async def download_video(url, format_str=None, progress_callback=None):
     loop = asyncio.get_event_loop()
     return await loop.run_in_executor(executor, download_video_sync, url, format_str, None, progress_callback)
+
+
+def upload_to_gofile_sync(file_path):
+    """Upload file to Gofile.io and return download link"""
+    try:
+        print(f"[GOFILE] Uploading {file_path}...")
+
+        # Get best server
+        server_resp = requests.get("https://api.gofile.io/servers", timeout=10)
+        server_data = server_resp.json()
+
+        if server_data.get("status") != "ok":
+            print(f"[GOFILE] Failed to get server: {server_data}")
+            return None
+
+        server = server_data["data"]["servers"][0]["name"]
+        print(f"[GOFILE] Using server: {server}")
+
+        # Upload file
+        with open(file_path, "rb") as f:
+            files = {"file": (os.path.basename(file_path), f)}
+            upload_resp = requests.post(
+                f"https://{server}.gofile.io/contents/uploadfile",
+                files=files,
+                timeout=600  # 10 min timeout for large files
+            )
+
+        upload_data = upload_resp.json()
+
+        if upload_data.get("status") != "ok":
+            print(f"[GOFILE] Upload failed: {upload_data}")
+            return None
+
+        download_url = upload_data["data"]["downloadPage"]
+        print(f"[GOFILE] Upload success: {download_url}")
+        return download_url
+
+    except Exception as e:
+        print(f"[GOFILE] Error: {e}")
+        return None
+
+
+async def upload_to_gofile(file_path):
+    """Async wrapper for Gofile upload"""
+    loop = asyncio.get_event_loop()
+    return await loop.run_in_executor(executor, upload_to_gofile_sync, file_path)
