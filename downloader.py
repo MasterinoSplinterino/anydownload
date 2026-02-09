@@ -21,6 +21,7 @@ def get_video_info_sync(url):
     ydl_opts = {
         'quiet': True,
         'no_warnings': True,
+        'extractor_args': {'youtube': {'player_client': ['web']}},
     }
     # Add cookies if file exists
     if os.path.exists(COOKIES_PATH):
@@ -43,6 +44,7 @@ def download_video_sync(url, format_str=None, output_filename=None, progress_cal
         'quiet': True,
         'no_warnings': True,
         'merge_output_format': 'mp4',
+        'extractor_args': {'youtube': {'player_client': ['web']}},
     }
     # Add cookies if file exists
     print(f"[DOWNLOAD] COOKIES_PATH={COOKIES_PATH}, exists={os.path.exists(COOKIES_PATH)}")

@@ -1,9 +1,13 @@
 FROM python:3.11-slim
 
 # Install system dependencies (FFmpeg is required for yt-dlp and spotdl)
+# curl and nodejs are required for yt-dlp JavaScript runtime
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
     ffmpeg \
+    curl \
+    && curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
+    && apt-get install -y nodejs \
     && rm -rf /var/lib/apt/lists/* \
     && apt-get clean
 
