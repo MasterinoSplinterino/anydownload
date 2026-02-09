@@ -45,8 +45,12 @@ def download_video_sync(url, format_str=None, output_filename=None, progress_cal
         'merge_output_format': 'mp4',
     }
     # Add cookies if file exists
+    print(f"[DOWNLOAD] COOKIES_PATH={COOKIES_PATH}, exists={os.path.exists(COOKIES_PATH)}")
     if os.path.exists(COOKIES_PATH):
         ydl_opts['cookiefile'] = COOKIES_PATH
+        print(f"[DOWNLOAD] Using cookies file: {COOKIES_PATH}")
+    else:
+        print(f"[DOWNLOAD] Cookies file not found: {COOKIES_PATH}")
     
     if format_str:
         ydl_opts['format'] = format_str

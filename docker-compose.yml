@@ -18,8 +18,8 @@ services:
       - bot_downloads:/app/downloads
       # Pyrogram session (for large file uploads)
       - bot_sessions:/app/sessions
-      # YouTube cookies file (for authentication)
-      - ./youtube_cookies.txt:/app/youtube_cookies.txt:ro
+      # Note: YouTube cookies are created dynamically from YOUTUBE_COOKIES_CONTENT env var
+      # and stored in /app/data/youtube_cookies.txt (part of bot_data volume)
     healthcheck:
       test: ["CMD", "python", "-c", "import sys; sys.exit(0)"]
       interval: 30s
