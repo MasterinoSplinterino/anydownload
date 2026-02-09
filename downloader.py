@@ -203,11 +203,16 @@ def upload_to_gofile_sync(file_path):
         server_resp = requests.get("https://api.gofile.io/servers", timeout=10)
         server_data = server_resp.json()
 
-        if server_data.get("status") != "ok":
-            print(f"[GOFILE] Failed to get server: {server_data}")
+        # Try to get server from 'servers' first, then 'serversAllZone'
+        servers = server_data.get("data", {}).get("servers", [])
+        if not servers:
+            servers = server_data.get("data", {}).get("serversAllZone", [])
+
+        if not servers:
+            print(f"[GOFILE] No servers available: {server_data}")
             return None
 
-        server = server_data["data"]["servers"][0]["name"]
+        server = servers[0]["name"]
         print(f"[GOFILE] Using server: {server}")
 
         # Upload file
