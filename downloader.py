@@ -54,8 +54,10 @@ def download_video_sync(url, format_str=None, output_filename=None, progress_cal
     
     if format_str:
         ydl_opts['format'] = format_str
+        print(f"[DOWNLOAD] Requested format: {format_str}")
     else:
         ydl_opts['format'] = 'best'
+        print(f"[DOWNLOAD] Using default format: best")
 
     # If output_filename is provided, use it (useful for temp names)
     if output_filename:
@@ -72,12 +74,36 @@ def download_video_sync(url, format_str=None, output_filename=None, progress_cal
 
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
         try:
+            # First, extract info to check available formats
+            print(f"[DOWNLOAD] Extracting video info to check formats...")
+            info = ydl.extract_info(url, download=False)
+            
+            # Log available formats for debugging
+            if info and 'formats' in info:
+                formats = info['formats']
+                print(f"[DOWNLOAD] Available formats count: {len(formats)}")
+                # Show best video and audio formats found
+                video_formats = [f for f in formats if f.get('vcodec') != 'none' and f.get('height')]
+                audio_formats = [f for f in formats if f.get('acodec') != 'none']
+                if video_formats:
+                    best_video = max(video_formats, key=lambda x: x.get('height', 0))
+                    print(f"[DOWNLOAD] Best video format: {best_video.get('height')}p, vcodec={best_video.get('vcodec')}")
+                if audio_formats:
+                    best_audio = max(audio_formats, key=lambda x: x.get('abr', 0) or 0)
+                    print(f"[DOWNLOAD] Best audio format: abr={best_audio.get('abr')}, acodec={best_audio.get('acodec')}")
+            
+            # Now download
+            print(f"[DOWNLOAD] Starting download...")
             info = ydl.extract_info(url, download=True)
             filename = ydl.prepare_filename(info)
+            print(f"[DOWNLOAD] Success: {filename}")
             return filename
         except yt_dlp.utils.DownloadError as e:
-            if "ffmpeg is not installed" in str(e):
-                print("FFmpeg not found. Falling back to 'best' format (single file).")
+            error_str = str(e)
+            print(f"[DOWNLOAD] DownloadError: {error_str}")
+            
+            if "ffmpeg is not installed" in error_str:
+                print("[DOWNLOAD] FFmpeg not found. Falling back to 'best' format (single file).")
                 # Remove merge option and use 'best'
                 if 'merge_output_format' in ydl_opts:
                     del ydl_opts['merge_output_format']
@@ -88,11 +114,41 @@ def download_video_sync(url, format_str=None, output_filename=None, progress_cal
                     info = ydl_fallback.extract_info(url, download=True)
                     filename = ydl_fallback.prepare_filename(info)
                     return filename
+            elif "Requested format is not available" in error_str:
+                print("[DOWNLOAD] Format not available. Trying fallback formats...")
+                # Try progressively simpler formats
+                fallback_formats = [
+                    'bestvideo+bestaudio/best',  # Try any quality merge
+                    'best',  # Single file best quality
+                    'worst',  # Worst quality as last resort
+                ]
+                
+                # Remove merge option for fallback attempts
+                if 'merge_output_format' in ydl_opts:
+                    del ydl_opts['merge_output_format']
+                
+                for fallback_fmt in fallback_formats:
+                    try:
+                        print(f"[DOWNLOAD] Trying fallback format: {fallback_fmt}")
+                        ydl_opts['format'] = fallback_fmt
+                        with yt_dlp.YoutubeDL(ydl_opts) as ydl_fallback:
+                            info = ydl_fallback.extract_info(url, download=True)
+                            filename = ydl_fallback.prepare_filename(info)
+                            print(f"[DOWNLOAD] Fallback success with '{fallback_fmt}': {filename}")
+                            return filename
+                    except Exception as fallback_error:
+                        print(f"[DOWNLOAD] Fallback '{fallback_fmt}' failed: {fallback_error}")
+                        continue
+                
+                print("[DOWNLOAD] All fallback formats failed")
+                return None
             else:
-                print(f"Error downloading: {e}")
+                print(f"[DOWNLOAD] Error downloading: {e}")
                 return None
         except Exception as e:
-            print(f"Error downloading: {e}")
+            print(f"[DOWNLOAD] Unexpected error: {e}")
+            import traceback
+            traceback.print_exc()
             return None
 
 def download_spotify_sync(url):
