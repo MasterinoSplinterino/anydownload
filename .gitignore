@@ -7,3 +7,6 @@ venv/
 downloads/
 *.session
 *.session-journal
+
+# YouTube cookies file (contains sensitive authentication data)
+youtube_cookies.txt

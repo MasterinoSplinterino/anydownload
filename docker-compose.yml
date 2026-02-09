@@ -11,12 +11,15 @@ services:
       - .env
     environment:
       - DB_PATH=/app/data/bot.db
+      - YOUTUBE_COOKIES_CONTENT=${YOUTUBE_COOKIES_CONTENT:-}
     volumes:
       # Persistent data storage
       - bot_data:/app/data
       - bot_downloads:/app/downloads
       # Pyrogram session (for large file uploads)
       - bot_sessions:/app/sessions
+      # YouTube cookies file (for authentication)
+      - ./youtube_cookies.txt:/app/youtube_cookies.txt:ro
     healthcheck:
       test: ["CMD", "python", "-c", "import sys; sys.exit(0)"]
       interval: 30s

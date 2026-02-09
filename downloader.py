@@ -5,6 +5,7 @@ from concurrent.futures import ThreadPoolExecutor
 import sys
 import subprocess
 import glob
+from config import COOKIES_PATH
 
 # Create a downloads directory if it doesn't exist
 if os.environ.get("VERCEL"):
@@ -21,6 +22,9 @@ def get_video_info_sync(url):
         'quiet': True,
         'no_warnings': True,
     }
+    # Add cookies if file exists
+    if os.path.exists(COOKIES_PATH):
+        ydl_opts['cookiefile'] = COOKIES_PATH
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
         try:
             info = ydl.extract_info(url, download=False)
@@ -40,6 +44,9 @@ def download_video_sync(url, format_str=None, output_filename=None, progress_cal
         'no_warnings': True,
         'merge_output_format': 'mp4',
     }
+    # Add cookies if file exists
+    if os.path.exists(COOKIES_PATH):
+        ydl_opts['cookiefile'] = COOKIES_PATH
     
     if format_str:
         ydl_opts['format'] = format_str

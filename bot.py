@@ -8,9 +8,12 @@ from aiogram.filters import Command
 from aiogram.types import FSInputFile, InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 
-from config import API_TOKEN, API_ID, API_HASH
+from config import API_TOKEN, API_ID, API_HASH, setup_cookies
 from downloader import download_video, download_spotify
 from database import is_user_allowed, add_user, migrate_from_file, get_user_count
+
+# Setup cookies from environment variable on startup
+setup_cookies()
 
 # Configure logging
 logging.basicConfig(
