@@ -202,9 +202,17 @@ async def handle_url(message: types.Message):
     elif "spotify.com" in url:
         await message.answer("🎧 Скачиваю музыку со Spotify...")
         await process_download(message, url, quality="spotify")
+    # Check if TikTok
+    elif "tiktok.com" in url or "vm.tiktok.com" in url:
+        await message.answer("🎵 Скачиваю видео с TikTok...")
+        await process_download(message, url, quality="best")
+    # Check if Twitter/X
+    elif "twitter.com" in url or "x.com" in url:
+        await message.answer("🐦 Скачиваю видео с Twitter/X...")
+        await process_download(message, url, quality="best")
     else:
-        # Try generic download
-        await message.answer("Пробую скачать по ссылке...")
+        # Try generic download (yt-dlp supports 1000+ sites)
+        await message.answer("🔄 Скачиваю видео...")
         await process_download(message, url, quality="best")
 
 @dp.callback_query(F.data.startswith("quality_"))
