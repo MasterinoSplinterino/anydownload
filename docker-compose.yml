@@ -12,6 +12,9 @@ services:
     environment:
       - DB_PATH=/app/data/bot.db
       - YOUTUBE_COOKIES_CONTENT=${YOUTUBE_COOKIES_CONTENT:-}
+      - POT_PROVIDER_URL=http://pot-provider:4416
+    depends_on:
+      - pot-provider
     volumes:
       # Persistent data storage
       - bot_data:/app/data
@@ -26,6 +29,13 @@ services:
       timeout: 10s
       retries: 3
       start_period: 10s
+
+  # Generates YouTube PO tokens for yt-dlp (fixes "Sign in to confirm you're not a bot" / 403)
+  pot-provider:
+    image: brainicism/bgutil-ytdlp-pot-provider
+    container_name: pot-provider
+    restart: unless-stopped
+    init: true
 
 volumes:
   bot_data:

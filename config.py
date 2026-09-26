@@ -7,6 +7,29 @@ API_TOKEN = os.getenv('API_TOKEN')
 API_ID = int(os.getenv('API_ID', 0))
 API_HASH = os.getenv('API_HASH')
 
+
+def _int_env(name, default):
+    try:
+        return int(os.getenv(name, default))
+    except (TypeError, ValueError):
+        return default
+
+
+# Admins (comma-separated Telegram IDs) are exempt from limits
+ADMIN_IDS = {
+    int(x) for x in os.getenv('ADMIN_IDS', '177036997').replace(' ', '').split(',') if x
+}
+
+# Queue and per-user limits
+MAX_CONCURRENT_DOWNLOADS = _int_env('MAX_CONCURRENT_DOWNLOADS', 2)  # downloads running at the same time
+MAX_QUEUE_SIZE = _int_env('MAX_QUEUE_SIZE', 50)                    # total waiting jobs
+MAX_JOBS_PER_USER = _int_env('MAX_JOBS_PER_USER', 2)                # running + waiting jobs per user
+DAILY_LIMIT_PER_USER = _int_env('DAILY_LIMIT_PER_USER', 30)         # successful downloads per 24h, 0 = unlimited
+COOLDOWN_SECONDS = _int_env('COOLDOWN_SECONDS', 5)                  # min pause between links from one user
+
+# bgutil PO Token provider (docker-compose service), e.g. http://pot-provider:4416
+POT_PROVIDER_URL = os.getenv('POT_PROVIDER_URL', '')
+
 # Path to YouTube cookies file (for yt-dlp authentication)
 # Use data/ directory to avoid conflicts with potential folders
 COOKIES_PATH = os.getenv('COOKIES_PATH', 'data/youtube_cookies.txt')

@@ -52,3 +52,25 @@ Restart=always
 [Install]
 WantedBy=multi-user.target
 ```
+
+## Queue & limits
+
+All downloads go through one queue (`queue_manager.py`):
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `ADMIN_IDS` | `177036997` | Comma-separated admin IDs, no limits |
+| `MAX_CONCURRENT_DOWNLOADS` | `2` | Downloads running at the same time |
+| `MAX_QUEUE_SIZE` | `50` | Max waiting jobs in total |
+| `MAX_JOBS_PER_USER` | `2` | Running + waiting jobs per user |
+| `DAILY_LIMIT_PER_USER` | `30` | Successful downloads per 24h (0 = unlimited) |
+| `COOLDOWN_SECONDS` | `5` | Min pause between links from one user |
+
+User commands: `/queue`, `/limits`, `/cancel`. Admin: `/stats`, `/setlimit <user_id> <n|default>`.
+
+## YouTube: PO tokens
+
+`docker compose up -d` also starts `brainicism/bgutil-ytdlp-pot-provider`, which generates
+PO tokens for yt-dlp. On Coolify (Dockerfile build pack) run that image as a separate service
+and set `POT_PROVIDER_URL=http://<service-host>:4416`. The container updates yt-dlp on every
+start (`YTDLP_AUTO_UPDATE=0` disables it), so a plain restart picks up YouTube fixes.

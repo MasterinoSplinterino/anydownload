@@ -64,6 +64,14 @@ def init_db():
         cursor.execute("""
             CREATE INDEX IF NOT EXISTS idx_users_user_id ON users(user_id)
         """)
+        cursor.execute("""
+            CREATE INDEX IF NOT EXISTS idx_stats_user_time ON download_stats(user_id, downloaded_at)
+        """)
+
+        # Per-user daily limit override (NULL = default from config)
+        columns = {row["name"] for row in cursor.execute("PRAGMA table_info(users)")}
+        if "daily_limit" not in columns:
+            cursor.execute("ALTER TABLE users ADD COLUMN daily_limit INTEGER")
 
         logging.info(f"Database initialized at {get_db_path()}")
 
@@ -145,6 +153,66 @@ def log_download(user_id: int, url: str, platform: str, quality: str, file_size:
             )
     except Exception as e:
         logging.error(f"Error logging download: {e}")
+
+
+def count_downloads_since(user_id: int, hours: int = 24) -> int:
+    """Count successful downloads of a user in the last `hours` hours."""
+    try:
+        with get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                """SELECT COUNT(*) AS count FROM download_stats
+                   WHERE user_id = ? AND downloaded_at >= datetime('now', ?)""",
+                (user_id, f"-{int(hours)} hours")
+            )
+            row = cursor.fetchone()
+            return row["count"] if row else 0
+    except Exception as e:
+        logging.error(f"Error counting downloads for {user_id}: {e}")
+        return 0
+
+
+def get_user_daily_limit(user_id: int) -> Optional[int]:
+    """Personal daily limit override, or None if the default applies."""
+    try:
+        with get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT daily_limit FROM users WHERE user_id = ?", (user_id,))
+            row = cursor.fetchone()
+            return row["daily_limit"] if row else None
+    except Exception as e:
+        logging.error(f"Error getting limit for {user_id}: {e}")
+        return None
+
+
+def set_user_daily_limit(user_id: int, limit: Optional[int]) -> bool:
+    """Set personal daily limit (None resets to default). Returns False if user not found."""
+    try:
+        with get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("UPDATE users SET daily_limit = ? WHERE user_id = ?", (limit, user_id))
+            return cursor.rowcount > 0
+    except Exception as e:
+        logging.error(f"Error setting limit for {user_id}: {e}")
+        return False
+
+
+def get_top_users(hours: int = 24, limit: int = 10) -> List[Tuple[int, Optional[str], int]]:
+    """Users with the most downloads in the last `hours` hours."""
+    try:
+        with get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                """SELECT s.user_id, u.username, COUNT(*) AS count
+                   FROM download_stats s LEFT JOIN users u ON u.user_id = s.user_id
+                   WHERE s.downloaded_at >= datetime('now', ?)
+                   GROUP BY s.user_id ORDER BY count DESC LIMIT ?""",
+                (f"-{int(hours)} hours", limit)
+            )
+            return [(row["user_id"], row["username"], row["count"]) for row in cursor.fetchall()]
+    except Exception as e:
+        logging.error(f"Error getting top users: {e}")
+        return []
 
 
 def migrate_from_file(file_path: str = "allowed_users.txt") -> int:

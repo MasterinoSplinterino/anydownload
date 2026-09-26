@@ -1,10 +1,9 @@
-aiogram
-yt-dlp
+aiogram>=3.4
+yt-dlp[default]
 pyrogram
 tgcrypto
 spotdl
 python-dotenv
 aiohttp
 requests
-yt-dlp-get-pot
 bgutil-ytdlp-pot-provider

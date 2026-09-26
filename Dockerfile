@@ -6,7 +6,7 @@ RUN apt-get update && \
     apt-get install -y --no-install-recommends \
     ffmpeg \
     curl \
-    && curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
+    && curl -fsSL https://deb.nodesource.com/setup_22.x | bash - \
     && apt-get install -y nodejs \
     && rm -rf /var/lib/apt/lists/* \
     && apt-get clean
@@ -30,5 +30,6 @@ RUN mkdir -p downloads data sessions
 ENV PYTHONUNBUFFERED=1
 ENV DB_PATH=/app/data/bot.db
 
-# Run the bot
-CMD ["python", "-u", "bot.py"]
+# YouTube breaks old yt-dlp versions often: update it on every container start
+# (set YTDLP_AUTO_UPDATE=0 to disable)
+CMD ["sh", "-c", "if [ \"${YTDLP_AUTO_UPDATE:-1}\" = \"1\" ]; then pip install -q -U --no-cache-dir 'yt-dlp[default]' bgutil-ytdlp-pot-provider || true; fi; exec python -u bot.py"]

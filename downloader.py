@@ -1,12 +1,12 @@
 import yt_dlp
 import os
 import asyncio
+import shutil
 from concurrent.futures import ThreadPoolExecutor
 import sys
 import subprocess
-import glob
 import requests
-from config import COOKIES_PATH
+from config import COOKIES_PATH, MAX_CONCURRENT_DOWNLOADS, POT_PROVIDER_URL
 
 # Create a downloads directory if it doesn't exist
 if os.environ.get("VERCEL"):
@@ -16,182 +16,173 @@ else:
     if not os.path.exists(DOWNLOAD_DIR):
         os.makedirs(DOWNLOAD_DIR)
 
-executor = ThreadPoolExecutor(max_workers=5)
+# +1 worker so file host uploads are not blocked by running downloads
+executor = ThreadPoolExecutor(max_workers=MAX_CONCURRENT_DOWNLOADS + 1)
 
-def get_video_info_sync(url):
-    ydl_opts = {
-        'quiet': True,
-        'no_warnings': True,
-        'extractor_args': {'youtube': {'player_client': ['web']}},
+FALLBACK_FORMAT = 'bv*+ba/b'
+
+MEDIA_EXTENSIONS = ('.mp4', '.mkv', '.webm', '.mov', '.m4a', '.mp3', '.opus', '.ogg', '.flac', '.wav', '.jpg', '.png')
+
+
+class DownloadFailed(Exception):
+    """Download failed; message is a short user-facing reason."""
+
+
+def make_job_dir(job_id):
+    """Every job gets its own directory so parallel jobs never touch each other's files."""
+    path = os.path.join(DOWNLOAD_DIR, f"job_{job_id}")
+    shutil.rmtree(path, ignore_errors=True)  # job ids restart after a reboot
+    os.makedirs(path, exist_ok=True)
+    return path
+
+
+def remove_job_dir(path):
+    shutil.rmtree(path, ignore_errors=True)
+
+
+def _base_opts():
+    opts = {
+        'quiet': False,
+        'no_warnings': False,
+        'noplaylist': True,
+        'socket_timeout': 30,
+        'retries': 5,
+        'fragment_retries': 5,
+        'force_ipv4': True,
+        # JavaScript runtime for solving YouTube n/sig challenges (needs yt-dlp-ejs + node >= 20)
         'js_runtimes': {'node': {}},
         'remote_components': ['ejs:github'],
     }
-    # Add cookies if file exists
     if os.path.exists(COOKIES_PATH):
-        ydl_opts['cookiefile'] = COOKIES_PATH
-    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-        try:
-            info = ydl.extract_info(url, download=False)
-            return info
-        except Exception as e:
-            print(f"Error extracting info: {e}")
-            return None
+        opts['cookiefile'] = COOKIES_PATH
+    return opts
 
-async def get_video_info(url):
-    loop = asyncio.get_event_loop()
-    return await loop.run_in_executor(executor, get_video_info_sync, url)
 
-def download_video_sync(url, format_str=None, output_filename=None, progress_callback=None):
-    # Add cookies if file exists
-    print(f"[DOWNLOAD] COOKIES_PATH={COOKIES_PATH}, exists={os.path.exists(COOKIES_PATH)}")
+def _youtube_extractor_args(clients):
+    args = {'youtube': {'player_client': clients}}
+    if POT_PROVIDER_URL:
+        args['youtubepot-bgutilhttp'] = {'base_url': [POT_PROVIDER_URL]}
+    return args
 
-    # Try different player clients in order of preference
-    # mweb with PO Token plugin provides best results for 1080p
-    player_clients = [
-        ['default', 'mweb'],  # Default + mweb with PO Token for best quality
-        ['web'],              # Web client with cookies
-        ['tv'],               # TV client as fallback
+
+def _find_output_file(info, job_dir):
+    """Return the real path of the downloaded file."""
+    for d in (info or {}).get('requested_downloads') or []:
+        path = d.get('filepath')
+        if path and os.path.exists(path):
+            return path
+    # Fallback: biggest media file in the job directory
+    files = [
+        os.path.join(job_dir, f) for f in os.listdir(job_dir)
+        if f.lower().endswith(MEDIA_EXTENSIONS) and not f.endswith('.part')
     ]
+    return max(files, key=os.path.getsize) if files else None
 
-    for clients in player_clients:
-        print(f"[DOWNLOAD] Trying player_client: {clients}")
 
-        ydl_opts = {
-            'outtmpl': os.path.join(DOWNLOAD_DIR, '%(title)s.%(ext)s'),
-            'quiet': False,
-            'no_warnings': False,
-            'merge_output_format': 'mp4',
-            'extractor_args': {'youtube': {'player_client': clients}},
-            'format': format_str if format_str else 'bestvideo[height<=1080]+bestaudio/best[height<=1080]/best',
-            'http_headers': {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-            },
-            'force_ipv4': True,  # Force IPv4 to avoid some bot detection
-            'sleep_interval': 1,  # Add delay between requests
-            'max_sleep_interval': 3,
-            # JavaScript runtime for solving YouTube challenges
-            'js_runtimes': {'node': {}},
-            'remote_components': ['ejs:github'],
-        }
+def _user_reason(error_str):
+    e = error_str.lower()
+    if 'sign in to confirm' in e or 'not a bot' in e:
+        return "YouTube требует подтверждения, что это не бот (нужны свежие cookies / PO token)."
+    if 'private' in e or 'login' in e or 'log in' in e:
+        return "Контент приватный или требует входа в аккаунт."
+    if 'unsupported url' in e:
+        return "Этот сайт не поддерживается."
+    if 'geo' in e or 'not available in your country' in e:
+        return "Видео недоступно в регионе сервера."
+    if 'video unavailable' in e or 'has been removed' in e or '404' in e:
+        return "Видео удалено или недоступно."
+    if 'requested format is not available' in e:
+        return "Нужный формат недоступен."
+    return "Не удалось скачать. Возможно, ссылка недоступна."
 
-        if os.path.exists(COOKIES_PATH):
-            ydl_opts['cookiefile'] = COOKIES_PATH
-            print(f"[DOWNLOAD] Using cookies file: {COOKIES_PATH}")
-        else:
-            print(f"[DOWNLOAD] Cookies file not found: {COOKIES_PATH}")
 
-        # If output_filename is provided, use it (useful for temp names)
-        if output_filename:
-            ydl_opts['outtmpl'] = os.path.join(DOWNLOAD_DIR, output_filename)
+def download_video_sync(url, format_str, job_dir, progress_callback=None):
+    """Download with yt-dlp into job_dir. Returns file path or raises DownloadFailed."""
+    is_youtube = 'youtube.com' in url or 'youtu.be' in url
+    print(f"[DOWNLOAD] url={url} format={format_str} cookies={os.path.exists(COOKIES_PATH)}")
 
-        # Add progress hook
-        def my_hook(d):
-            if d['status'] == 'downloading':
-                if progress_callback:
-                    progress_callback(d)
+    # Player clients are YouTube-specific; other sites need a single attempt
+    attempts = [['default'], ['default', 'mweb'], ['tv', 'web_safari']] if is_youtube else [None]
+    last_error = "unknown error"
 
-        if progress_callback:
-            ydl_opts['progress_hooks'] = [my_hook]
+    def hook(d):
+        if d.get('status') == 'downloading' and progress_callback:
+            progress_callback(d)
 
-        try:
-            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                print(f"[DOWNLOAD] Starting download...")
-                info = ydl.extract_info(url, download=True)
-                filename = ydl.prepare_filename(info)
+    for clients in attempts:
+        formats = [format_str] if format_str == FALLBACK_FORMAT else [format_str, FALLBACK_FORMAT]
+        for fmt in formats:
+            ydl_opts = _base_opts()
+            ydl_opts.update({
+                # Titles of Instagram/TikTok posts can be huge -> limit bytes to avoid "File name too long"
+                'outtmpl': os.path.join(job_dir, '%(title).80B [%(id).40B].%(ext)s'),
+                'format': fmt,
+                'progress_hooks': [hook],
+            })
+            if fmt != 'bestaudio/best':
+                ydl_opts['merge_output_format'] = 'mp4'
+            if clients:
+                ydl_opts['extractor_args'] = _youtube_extractor_args(clients)
 
-                # Log actual quality downloaded
-                actual_height = info.get('height', 'unknown')
-                print(f"[DOWNLOAD] Success: {filename} (quality: {actual_height}p)")
-                return filename
-        except yt_dlp.utils.DownloadError as e:
-            error_str = str(e)
-            print(f"[DOWNLOAD] DownloadError with {clients}: {error_str}")
+            print(f"[DOWNLOAD] Trying clients={clients} format={fmt}")
+            try:
+                with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                    info = ydl.extract_info(url, download=True)
+                path = _find_output_file(info, job_dir)
+                if path:
+                    print(f"[DOWNLOAD] Success: {path} (height: {info.get('height')})")
+                    return path
+                last_error = "file not found after download"
+                break
+            except yt_dlp.utils.DownloadError as e:
+                last_error = str(e)
+                print(f"[DOWNLOAD] DownloadError clients={clients} format={fmt}: {last_error}")
+                if 'Requested format is not available' in last_error:
+                    continue  # same client, looser format
+                break  # next player client
+            except Exception as e:
+                last_error = str(e)
+                print(f"[DOWNLOAD] Unexpected error clients={clients}: {e}")
+                break
 
-            if "Sign in to confirm" in error_str or "bot" in error_str.lower():
-                print(f"[DOWNLOAD] Bot detection triggered, trying next player client...")
-                continue
-            elif "Requested format is not available" in error_str:
-                # Try to download best available format instead
-                print(f"[DOWNLOAD] Requested format not available, trying best available...")
-                try:
-                    ydl_opts['format'] = 'best'
-                    with yt_dlp.YoutubeDL(ydl_opts) as ydl_fallback:
-                        info = ydl_fallback.extract_info(url, download=True)
-                        filename = ydl_fallback.prepare_filename(info)
-                        actual_height = info.get('height', 'unknown')
-                        print(f"[DOWNLOAD] Fallback success: {filename} (quality: {actual_height}p)")
-                        return filename
-                except Exception as fallback_e:
-                    print(f"[DOWNLOAD] Fallback also failed: {fallback_e}")
-                    continue
-            elif "ffmpeg is not installed" in error_str:
-                # Try without merge
-                try:
-                    del ydl_opts['merge_output_format']
-                    ydl_opts['format'] = 'best'
-                    with yt_dlp.YoutubeDL(ydl_opts) as ydl_fallback:
-                        info = ydl_fallback.extract_info(url, download=True)
-                        filename = ydl_fallback.prepare_filename(info)
-                        return filename
-                except Exception:
-                    continue
-            else:
-                continue
-        except Exception as e:
-            print(f"[DOWNLOAD] Unexpected error with {clients}: {e}")
-            continue
+        # Non-retryable problems: don't waste time on other clients
+        low = last_error.lower()
+        if any(s in low for s in ('unsupported url', 'private', 'has been removed', 'video unavailable')):
+            break
 
-    print("[DOWNLOAD] All player clients failed")
-    return None
+    print(f"[DOWNLOAD] All attempts failed: {last_error}")
+    raise DownloadFailed(_user_reason(last_error))
 
-def download_spotify_sync(url):
+
+def download_spotify_sync(url, job_dir):
     try:
         print(f"Downloading Spotify URL: {url}")
-        
-        # Get list of files before download to identify the new one
-        before_files = set(os.listdir(DOWNLOAD_DIR))
-        
-        # Run spotdl
-        # --output format to ensure we can find it easily? Default is "{artist} - {title}.{ext}"
-        # Let's just download to DOWNLOAD_DIR
-        cmd = [sys.executable, "-m", "spotdl", url, "--output", DOWNLOAD_DIR]
-        
-        # Run with a timeout of 5 minutes
+        output = os.path.join(job_dir, "{artists} - {title}.{output-ext}")
+        cmd = [sys.executable, "-m", "spotdl", "download", url, "--output", output]
         process = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
-        
         if process.returncode != 0:
-            print(f"SpotDL error: {process.stderr}")
-            # Sometimes spotdl errors but still downloads (e.g. minor metadata issues)
-            # So we proceed to check for new files
-        
-        # Check for new files
-        after_files = set(os.listdir(DOWNLOAD_DIR))
-        new_files = after_files - before_files
-        
-        # Filter for audio files
-        audio_files = [f for f in new_files if f.endswith(('.mp3', '.m4a', '.flac'))]
-        
+            # spotdl sometimes errors but still downloads (e.g. metadata issues)
+            print(f"SpotDL error: {process.stderr[-2000:]}")
+
+        audio_files = [
+            os.path.join(job_dir, f) for f in os.listdir(job_dir)
+            if f.endswith(('.mp3', '.m4a', '.flac', '.opus', '.ogg'))
+        ]
         if not audio_files:
-            print("No new files found after SpotDL run.")
-            return None
-            
-        # Return the first new file found (absolute path)
-        return os.path.join(DOWNLOAD_DIR, audio_files[0])
-
+            raise DownloadFailed("Spotify: трек не найден или не скачался.")
+        return max(audio_files, key=os.path.getmtime)
     except subprocess.TimeoutExpired:
-        print("SpotDL timed out")
-        return None
-    except Exception as e:
-        print(f"Error downloading spotify: {e}")
-        return None
+        raise DownloadFailed("Spotify: превышено время ожидания.")
 
-async def download_spotify(url):
-    loop = asyncio.get_event_loop()
-    return await loop.run_in_executor(executor, download_spotify_sync, url)
 
-async def download_video(url, format_str=None, progress_callback=None):
-    loop = asyncio.get_event_loop()
-    return await loop.run_in_executor(executor, download_video_sync, url, format_str, None, progress_callback)
+async def download_spotify(url, job_dir):
+    loop = asyncio.get_running_loop()
+    return await loop.run_in_executor(executor, download_spotify_sync, url, job_dir)
+
+
+async def download_video(url, format_str, job_dir, progress_callback=None):
+    loop = asyncio.get_running_loop()
+    return await loop.run_in_executor(executor, download_video_sync, url, format_str, job_dir, progress_callback)
 
 
 def upload_to_filehost_sync(file_path):
@@ -263,5 +254,5 @@ def _upload_litterbox(file_path, filename):
 
 async def upload_to_filehost(file_path):
     """Async wrapper for file host upload"""
-    loop = asyncio.get_event_loop()
+    loop = asyncio.get_running_loop()
     return await loop.run_in_executor(executor, upload_to_filehost_sync, file_path)
