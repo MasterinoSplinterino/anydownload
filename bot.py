@@ -5,14 +5,17 @@ import re
 import secrets
 import sys
 from aiogram import Bot, Dispatcher, types, F
-from aiogram.exceptions import TelegramBadRequest
+from aiogram.exceptions import TelegramAPIError, TelegramBadRequest
 from aiogram.filters import Command
 from aiogram.types import FSInputFile, InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 
 from config import API_TOKEN, API_ID, API_HASH, setup_cookies
 from downloader import download_video, download_spotify, upload_to_filehost
-from database import is_user_allowed, add_user, migrate_from_file, get_user_count
+from database import (
+    is_user_allowed, add_user, migrate_from_file, get_user_count,
+    get_access_request_status, create_access_request, delete_access_request, decide_access_request,
+)
 
 # Setup cookies from environment variable on startup
 setup_cookies()
@@ -39,6 +42,9 @@ if not API_ID or not API_HASH:
 bot = Bot(token=API_TOKEN)
 dp = Dispatcher()
 
+# Telegram user id of the bot owner: always allowed, approves access requests
+ADMIN_ID = 177036997
+
 # Store user URLs temporarily: {user_id: url}
 user_urls = {}
 
@@ -49,27 +55,108 @@ MAX_RETRY_JOBS = 500
 
 def is_authorized(user_id):
     # Admin is always allowed
-    return user_id == 177036997 or is_user_allowed(user_id)
+    return user_id == ADMIN_ID or is_user_allowed(user_id)
 
 
 async def check_auth(message: types.Message):
-    if not is_authorized(message.from_user.id):
-        jokes = [
-            "⛔️ **Доступ запрещен!**\nМой создатель не разрешал мне разговаривать с незнакомцами.",
-            "🕵️ **Вы кто?**\nВас нет в списках VIP. Предъявите пропуск или коробку конфет администратору.",
-            "🤖 **Бип-буп!**\nМои сенсоры не опознают вас. Попробуйте перезагрузить вселенную.",
-            "🚪 **Тук-тук!**\n— Кто там?\n— Никого. Доступа нет.",
-            "🚫 **Error 403**\nВы не авторизованы. Но вы держитесь там, всего вам доброго!",
-        ]
-        await message.answer(random.choice(jokes))
-        logging.warning(f"Unauthorized access attempt by user {message.from_user.id} (@{message.from_user.username})")
-        return False
-    return True
+    user = message.from_user
+    if is_authorized(user.id):
+        return True
+
+    logging.warning(f"Unauthorized access attempt by user {user.id} (@{user.username})")
+    status = get_access_request_status(user.id)
+    if status == "pending":
+        await message.answer("⏳ Твой запрос на доступ уже у администратора. Как только он подтвердит — я напишу.")
+    elif status == "rejected":
+        await message.answer("⛔️ Администратор отклонил запрос на доступ.")
+    else:
+        builder = InlineKeyboardBuilder()
+        builder.button(text="📨 Запросить доступ", callback_data="access_request")
+        await message.answer(
+            "🔒 Это закрытый бот.\n"
+            "Чтобы им пользоваться, отправь запрос — администратор подтвердит его вручную.",
+            reply_markup=builder.as_markup()
+        )
+    return False
+
+
+@dp.callback_query(F.data == "access_request")
+async def handle_access_request(callback: types.CallbackQuery):
+    user = callback.from_user
+    if is_authorized(user.id):
+        await callback.answer("У тебя уже есть доступ 😎", show_alert=True)
+        return
+    # INSERT OR IGNORE: a second click (or a rejected user) never re-notifies the admin
+    if not create_access_request(user.id, user.username, user.full_name):
+        await callback.answer("Запрос уже отправлен.", show_alert=True)
+        return
+
+    username = f"@{user.username}" if user.username else "без username"
+    builder = InlineKeyboardBuilder()
+    builder.button(text="✅ Одобрить", callback_data=f"access_approve_{user.id}")
+    builder.button(text="❌ Отклонить", callback_data=f"access_reject_{user.id}")
+    try:
+        await bot.send_message(
+            ADMIN_ID,
+            f"🆕 Запрос на доступ\n{user.full_name} ({username})\nID: {user.id}",
+            reply_markup=builder.as_markup()
+        )
+    except TelegramAPIError as e:
+        logging.error(f"Failed to notify admin about access request from {user.id}: {e}")
+        delete_access_request(user.id)  # let the user try again
+        await callback.answer("Не получилось отправить запрос, попробуй позже.", show_alert=True)
+        return
+
+    logging.info(f"Access request from {user.id} ({username})")
+    await callback.answer()
+    if isinstance(callback.message, types.Message):
+        try:
+            await callback.message.edit_text(
+                "📨 Запрос отправлен! Напишу, как только администратор его подтвердит."
+            )
+        except TelegramBadRequest:
+            pass
+
+
+@dp.callback_query(F.data.regexp(r"^access_(approve|reject)_(\d+)$").as_("decision"))
+async def handle_access_decision(callback: types.CallbackQuery, decision: re.Match):
+    if callback.from_user.id != ADMIN_ID:
+        await callback.answer("Только для администратора.", show_alert=True)
+        return
+
+    approved = decision.group(1) == "approve"
+    user_id = int(decision.group(2))
+    request = decide_access_request(user_id, "approved" if approved else "rejected")
+    if request is None:
+        await callback.answer("Этот запрос уже обработан.", show_alert=True)
+        return
+
+    if approved:
+        add_user(user_id, request["username"], added_by="request")
+        user_text = "✅ Доступ одобрен! Кидай ссылку — скачаю."
+        verdict = "✅ Одобрено"
+    else:
+        user_text = "⛔️ Администратор отклонил запрос на доступ."
+        verdict = "❌ Отклонено"
+    logging.info(f"Access request from {user_id}: {verdict}")
+
+    try:
+        await bot.send_message(user_id, user_text)
+    except TelegramAPIError as e:
+        # the user may have blocked the bot; the decision is still saved
+        logging.warning(f"Could not notify {user_id} about access decision: {e}")
+
+    await callback.answer(verdict)
+    if isinstance(callback.message, types.Message):
+        try:
+            await callback.message.edit_text(f"{callback.message.text}\n\n{verdict}")
+        except TelegramBadRequest:
+            pass
 
 @dp.message(Command("add"))
 async def cmd_add_user(message: types.Message):
     # Admin check
-    if message.from_user.id != 177036997:
+    if message.from_user.id != ADMIN_ID:
         return
 
     args = message.text.split()
@@ -174,29 +261,6 @@ async def cmd_kir(message: types.Message):
     except Exception as e:
         logging.error(f"Error reading wishes: {e}")
         await message.answer("Что-то пошло не так при чтении пожеланий.")
-
-@dp.message(F.text.lower() == "кир")
-async def secret_code_handler(message: types.Message):
-    user_id = message.from_user.id
-    username = message.from_user.username or "Unknown"
-    
-    # Check if already allowed
-    if is_user_allowed(user_id):
-        await message.answer("Ты уже в клубе, бро! 😎")
-        return
-
-    # Add to database
-    if add_user(user_id, username, added_by="secret_code"):
-        await message.answer("✅ Доступ получен! Добро пожаловать в элитный клуб.\nТеперь можешь скидывать ссылки.")
-        logging.info(f"User {username} ({user_id}) added via secret code.")
-
-        # Notify admin
-        try:
-            await bot.send_message(177036997, f"🆕 Пользователь @{username} ({user_id}) активировал секретный код!")
-        except:
-            pass
-    else:
-        await message.answer("Что-то пошло не так при активации кода.")
 
 @dp.message(F.text)
 async def handle_url(message: types.Message):
@@ -565,7 +629,7 @@ async def main():
                 BotCommand(command="add", description="Добавить пользователя"),
                 BotCommand(command="kir", description="Получить пожелание"),
             ],
-            scope=BotCommandScopeChat(chat_id=177036997)
+            scope=BotCommandScopeChat(chat_id=ADMIN_ID)
         )
     except Exception as e:
         logging.error(f"Failed to set admin commands: {e}")

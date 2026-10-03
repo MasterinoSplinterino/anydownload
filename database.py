@@ -60,6 +60,18 @@ def init_db():
             )
         """)
 
+        # Access requests from unknown users, approved/rejected by the admin
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS access_requests (
+                user_id INTEGER PRIMARY KEY,
+                username TEXT,
+                full_name TEXT,
+                status TEXT NOT NULL DEFAULT 'pending',
+                requested_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                decided_at TIMESTAMP
+            )
+        """)
+
         # Create index for faster lookups
         cursor.execute("""
             CREATE INDEX IF NOT EXISTS idx_users_user_id ON users(user_id)
@@ -130,6 +142,71 @@ def get_user_count() -> int:
     except Exception as e:
         logging.error(f"Error counting users: {e}")
         return 0
+
+
+def get_access_request_status(user_id: int) -> Optional[str]:
+    """Return 'pending' / 'approved' / 'rejected', or None if the user never asked."""
+    try:
+        with get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT status FROM access_requests WHERE user_id = ?", (user_id,))
+            row = cursor.fetchone()
+            return row["status"] if row else None
+    except Exception as e:
+        logging.error(f"Error reading access request {user_id}: {e}")
+        return None
+
+
+def create_access_request(user_id: int, username: Optional[str], full_name: Optional[str]) -> bool:
+    """Create a pending request. Returns False if the user already has one (any status)."""
+    try:
+        with get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                "INSERT OR IGNORE INTO access_requests (user_id, username, full_name) VALUES (?, ?, ?)",
+                (user_id, username, full_name)
+            )
+            return cursor.rowcount > 0
+    except Exception as e:
+        logging.error(f"Error creating access request {user_id}: {e}")
+        return False
+
+
+def delete_access_request(user_id: int) -> bool:
+    """Drop a request so the user can ask again."""
+    try:
+        with get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("DELETE FROM access_requests WHERE user_id = ?", (user_id,))
+            return cursor.rowcount > 0
+    except Exception as e:
+        logging.error(f"Error deleting access request {user_id}: {e}")
+        return False
+
+
+def decide_access_request(user_id: int, status: str) -> Optional[dict]:
+    """Move a pending request to 'approved'/'rejected'.
+
+    Returns the request (username, full_name) or None if there was no pending
+    request, so a second click on the admin buttons is a no-op.
+    """
+    try:
+        with get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                """UPDATE access_requests SET status = ?, decided_at = CURRENT_TIMESTAMP
+                   WHERE user_id = ? AND status = 'pending'""",
+                (status, user_id)
+            )
+            if cursor.rowcount == 0:
+                return None
+            cursor.execute(
+                "SELECT username, full_name FROM access_requests WHERE user_id = ?", (user_id,)
+            )
+            return dict(cursor.fetchone())
+    except Exception as e:
+        logging.error(f"Error deciding access request {user_id}: {e}")
+        return None
 
 
 def log_download(user_id: int, url: str, platform: str, quality: str, file_size: int = 0):

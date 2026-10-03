@@ -31,6 +31,7 @@ Built with Python, `aiogram`, `yt-dlp`, and `Pyrogram`.
 
 ### 🛡️ Security & Administration
 *   **Whitelist System**: Only allowed users can use the bot.
+*   **Access Requests**: Unknown users get a "📨 Запросить доступ" button; the admin receives the request with "✅ Одобрить" / "❌ Отклонить" buttons and the user is notified of the decision. Requests are stored in the `access_requests` SQLite table; a rejected user can't re-request (use `/add` to let them in).
 *   **Admin Panel**:
     *   Admin (ID 177036997) has full access.
     *   Command `/add @username` to instantly add new users to the whitelist.
