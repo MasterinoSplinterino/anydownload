@@ -253,8 +253,9 @@ def get_format_str(quality):
     elif quality == "audio":
         return "bestaudio/best"
     elif quality == "best":
-        return "best"
-    return "best"
+        # "best" alone fails on sites with only separate video/audio streams (e.g. Pinterest)
+        return "b/bv*+ba"
+    return "b/bv*+ba"
 
 async def process_download(message: types.Message, url: str, quality: str):
     global download_semaphore

@@ -114,7 +114,7 @@ def download_video_sync(url, format_str=None, output_filename=None, progress_cal
                 # Try to download best available format instead
                 print(f"[DOWNLOAD] Requested format not available, trying best available...")
                 try:
-                    ydl_opts['format'] = 'best'
+                    ydl_opts['format'] = 'b/bv*+ba'  # some sites (Pinterest, Instagram) only have separate video+audio streams
                     with yt_dlp.YoutubeDL(ydl_opts) as ydl_fallback:
                         info = ydl_fallback.extract_info(url, download=True)
                         filename = ydl_fallback.prepare_filename(info)
