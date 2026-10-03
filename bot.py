@@ -403,16 +403,20 @@ async def process_download(message: types.Message, url: str, quality: str):
                 
                 # Retry logic for upload
                 max_retries = 3
+                # request_timeout only works via bot.send_*: message.answer_* silently
+                # drops it into the API payload and keeps aiogram's default 60s timeout
                 for attempt in range(max_retries):
                     try:
                         if quality in ["audio", "spotify"]:
-                             await message.answer_audio(
+                             await bot.send_audio(
+                                message.chat.id,
                                 video_file,
                                 caption=f"🎧 {caption_text}",
                                 request_timeout=1200
                              )
                         else:
-                             await message.answer_video(
+                             await bot.send_video(
+                                message.chat.id,
                                 video_file,
                                 caption=f"📹 {caption_text}",
                                 supports_streaming=True,
