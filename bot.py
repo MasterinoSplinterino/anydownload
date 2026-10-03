@@ -2,8 +2,10 @@ import asyncio
 import logging
 import os
 import re
+import secrets
 import sys
 from aiogram import Bot, Dispatcher, types, F
+from aiogram.exceptions import TelegramBadRequest
 from aiogram.filters import Command
 from aiogram.types import FSInputFile, InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.utils.keyboard import InlineKeyboardBuilder
@@ -40,13 +42,18 @@ dp = Dispatcher()
 # Store user URLs temporarily: {user_id: url}
 user_urls = {}
 
+# Failed downloads awaiting a "Повторить" click: {job_id: (url, quality)}
+retry_jobs = {}
+MAX_RETRY_JOBS = 500
+
+
+def is_authorized(user_id):
+    # Admin is always allowed
+    return user_id == 177036997 or is_user_allowed(user_id)
+
 
 async def check_auth(message: types.Message):
-    # Admin is always allowed
-    if message.from_user.id == 177036997:
-        return True
-
-    if not is_user_allowed(message.from_user.id):
+    if not is_authorized(message.from_user.id):
         jokes = [
             "⛔️ **Доступ запрещен!**\nМой создатель не разрешал мне разговаривать с незнакомцами.",
             "🕵️ **Вы кто?**\nВас нет в списках VIP. Предъявите пропуск или коробку конфет администратору.",
@@ -136,6 +143,17 @@ def get_quality_keyboard():
     builder.button(text="360p", callback_data="quality_360")
     builder.button(text="Audio Only", callback_data="quality_audio")
     builder.adjust(2)
+    return builder.as_markup()
+
+def get_retry_keyboard(url, quality):
+    # callback_data is limited to 64 bytes, so the URL stays here and the button carries a short id
+    job_id = secrets.token_urlsafe(8)
+    retry_jobs[job_id] = (url, quality)
+    while len(retry_jobs) > MAX_RETRY_JOBS:
+        retry_jobs.pop(next(iter(retry_jobs)))  # drop the oldest
+
+    builder = InlineKeyboardBuilder()
+    builder.button(text="🔄 Повторить", callback_data=f"retry_{job_id}")
     return builder.as_markup()
 
 @dp.message(Command("kir"))
@@ -243,6 +261,30 @@ async def handle_quality_selection(callback: types.CallbackQuery):
         pass
     await process_download(callback.message, url, quality)
 
+@dp.callback_query(F.data.startswith("retry_"))
+async def handle_retry(callback: types.CallbackQuery):
+    if not is_authorized(callback.from_user.id):
+        await callback.answer("⛔️ Доступ запрещен", show_alert=True)
+        return
+
+    # pop so a double click doesn't start the same download twice
+    job = retry_jobs.pop(callback.data.removeprefix("retry_"), None)
+    if not job:
+        await callback.answer("Ссылка устарела. Отправь её снова.", show_alert=True)
+        return
+
+    url, quality = job
+    logging.info(f"Retry requested by {callback.from_user.id}: {url} ({quality})")
+    await callback.answer("Повторяю...")
+    # messages older than 48h arrive as InaccessibleMessage, which can't be edited
+    if isinstance(callback.message, types.Message):
+        try:
+            await callback.message.edit_reply_markup(reply_markup=None)
+        except TelegramBadRequest:
+            pass
+    await callback.message.answer("🔄 Повторяю...")
+    await process_download(callback.message, url, quality)
+
 def get_format_str(quality):
     if quality == "1080":
         return "bestvideo[height<=1080]+bestaudio/best[height<=1080]"
@@ -310,7 +352,7 @@ async def process_download(message: types.Message, url: str, quality: str):
             
             if not file_path or not os.path.exists(file_path):
                 logging.error(f"Download failed: file not found at {file_path}")
-                await message.answer("Не удалось скачать файл. Возможно, он недоступен.")
+                await message.answer("Не удалось скачать файл. Возможно, он недоступен.", reply_markup=get_retry_keyboard(url, quality))
                 return
 
             # Check file size (Telegram limit ~50MB for bots)
@@ -335,7 +377,7 @@ async def process_download(message: types.Message, url: str, quality: str):
                         parse_mode="Markdown"
                     )
                 else:
-                    await message.answer("❌ Не удалось загрузить файл на файлообменник.")
+                    await message.answer("❌ Не удалось загрузить файл на файлообменник.", reply_markup=get_retry_keyboard(url, quality))
 
                 # Cleanup
                 if os.path.exists(file_path):
@@ -384,11 +426,11 @@ async def process_download(message: types.Message, url: str, quality: str):
                         stderr_data = await process.stderr.read()
                         error_msg = stderr_data.decode().strip()
                         logging.error(f"Uploader error: {error_msg}")
-                        await message.answer(f"Ошибка при загрузке: {error_msg}")
+                        await message.answer(f"Ошибка при загрузке: {error_msg}", reply_markup=get_retry_keyboard(url, quality))
                 
                 except Exception as e:
                     logging.error(f"Subprocess error: {e}")
-                    await message.answer(f"Не удалось запустить загрузчик: {e}")
+                    await message.answer(f"Не удалось запустить загрузчик: {e}", reply_markup=get_retry_keyboard(url, quality))
                 
                 # Cleanup
                 if os.path.exists(file_path):
@@ -430,7 +472,7 @@ async def process_download(message: types.Message, url: str, quality: str):
                         await asyncio.sleep(2)
 
             except Exception as e:
-                await message.answer(f"Ошибка при отправке файла: {e}")
+                await message.answer(f"Ошибка при отправке файла: {e}", reply_markup=get_retry_keyboard(url, quality))
             
             # Cleanup
             if os.path.exists(file_path):
@@ -438,7 +480,7 @@ async def process_download(message: types.Message, url: str, quality: str):
                 logging.info(f"Cleaned up file: {file_path}")
         except Exception as e:
             logging.error(f"Error processing download: {e}", exc_info=True)
-            await message.answer("Произошла ошибка при обработке видео.")
+            await message.answer("Произошла ошибка при обработке видео.", reply_markup=get_retry_keyboard(url, quality))
 
 async def cleanup_downloads():
     """Periodically clean up the downloads directory."""
